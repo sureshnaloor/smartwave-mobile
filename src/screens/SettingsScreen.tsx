@@ -1,9 +1,11 @@
 import React from "react";
 import { View, Text, StyleSheet, TouchableOpacity, Switch } from "react-native";
 import { useTheme } from "../context/ThemeContext";
+import { useAuth } from "../context/AuthContext";
 
 export default function SettingsScreen() {
   const { theme, setTheme, fontScaleKey, setFontScaleKey, colors } = useTheme();
+  const { signOut } = useAuth();
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
@@ -45,6 +47,19 @@ export default function SettingsScreen() {
           </TouchableOpacity>
         ))}
       </View>
+
+      <View style={[styles.section, { backgroundColor: colors.card, borderColor: colors.border }]}>
+        <Text style={[styles.sectionTitle, { color: colors.textMuted }]}>Account</Text>
+        <TouchableOpacity
+          style={[styles.logoutButton, { borderColor: colors.error }]}
+          onPress={() => signOut()}
+        >
+          <Text style={[styles.logoutButtonText, { color: colors.error }]}>Log out</Text>
+        </TouchableOpacity>
+        <Text style={[styles.logoutHint, { color: colors.textMuted }]}>
+          Sign out to switch to another account.
+        </Text>
+      </View>
     </View>
   );
 }
@@ -78,4 +93,12 @@ const styles = StyleSheet.create({
   fontOptionText: { fontSize: 16 },
   fontSmall: { fontSize: 14 },
   fontLarge: { fontSize: 18 },
+  logoutButton: {
+    borderWidth: 1,
+    borderRadius: 10,
+    padding: 14,
+    alignItems: "center",
+  },
+  logoutButtonText: { fontSize: 16, fontWeight: "600" },
+  logoutHint: { fontSize: 12, marginTop: 8 },
 });

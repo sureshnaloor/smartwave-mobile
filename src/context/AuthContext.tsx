@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useEffect, useState } from "react";
 import * as SecureStore from "expo-secure-store";
-import { login as apiLogin } from "../api/client";
+import { login as apiLogin, loginWithGoogle as apiLoginWithGoogle, loginWithApple as apiLoginWithApple, getProfile } from "../api/client";
 
 const TOKEN_KEY = "smartwave_token";
 
@@ -11,6 +11,9 @@ type AuthContextType = {
   user: User | null;
   loading: boolean;
   signIn: (email: string, password: string) => Promise<void>;
+  signInWithGoogle: (code: string, redirectUri: string) => Promise<void>;
+  signInWithApple: (identityToken: string) => Promise<void>;
+  completeSignInWithToken: (token: string) => Promise<void>;
   signOut: () => Promise<void>;
   setToken: (t: string | null) => void;
 };
@@ -42,6 +45,41 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setUser(u);
   };
 
+  const signInWithGoogle = async (code: string, redirectUri: string) => {
+    const { token: newToken, user: u } = await apiLoginWithGoogle({ code, redirectUri });
+    await SecureStore.setItemAsync(TOKEN_KEY, newToken);
+    setTokenState(newToken);
+    setUser(u);
+  };
+
+  const signInWithApple = async (identityToken: string) => {
+    const { token: newToken, user: u } = await apiLoginWithApple(identityToken);
+    await SecureStore.setItemAsync(TOKEN_KEY, newToken);
+    setTokenState(newToken);
+    setUser(u);
+  };
+
+  const completeSignInWithToken = async (token: string) => {
+    await SecureStore.setItemAsync(TOKEN_KEY, token);
+    setTokenState(token);
+    try {
+      const profile = await getProfile(token);
+      setUser({
+        id: profile._id ?? "",
+        email: profile.userEmail,
+        name: profile.name ?? null,
+        image: profile.photo ?? null,
+      });
+    } catch (e) {
+      setUser(null);
+      const msg = e instanceof Error ? e.message : String(e);
+      if (msg.includes("Unauthorized") || msg.includes("missing") || msg.includes("invalid")) {
+        await SecureStore.deleteItemAsync(TOKEN_KEY);
+        setTokenState(null);
+      }
+    }
+  };
+
   const signOut = async () => {
     await SecureStore.deleteItemAsync(TOKEN_KEY);
     setTokenState(null);
@@ -55,6 +93,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         user,
         loading,
         signIn,
+        signInWithGoogle,
+        signInWithApple,
+        completeSignInWithToken,
         signOut,
         setToken,
       }}

@@ -57,6 +57,8 @@ export type Profile = {
   workCountry?: string;
   website?: string;
   linkedin?: string;
+  /** When set, profile was created by an admin; user cannot edit, only view/share. */
+  createdByAdminId?: string;
   [key: string]: unknown;
 };
 
@@ -74,12 +76,86 @@ export async function login(
   return data;
 }
 
+export type LoginGooglePayload =
+  | { idToken: string }
+  | { code: string; redirectUri: string };
+
+/** Backend redirect flow: get Google auth URL; after sign-in, backend redirects to returnUrl?token=JWT */
+export async function getGoogleAuthStart(
+  returnUrl: string,
+  codeChallenge: string,
+  codeVerifier: string
+): Promise<{ authUrl: string }> {
+  const res = await fetchWithHint(`${API_BASE}/api/mobile/auth/google/start`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      returnUrl,
+      code_challenge: codeChallenge,
+      code_verifier: codeVerifier,
+    }),
+  });
+  const data = await parseJsonResponse<{ authUrl: string; error?: string }>(res);
+  if (!res.ok) throw new Error(data.error ?? "Failed to get auth URL");
+  return data;
+}
+
+export async function loginWithApple(identityToken: string): Promise<{
+  token: string;
+  user: { id: string; email: string; name: string | null; image: string | null };
+}> {
+  const res = await fetchWithHint(`${API_BASE}/api/mobile/auth/apple`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ identityToken }),
+  });
+  const data = await parseJsonResponse<{
+    token: string;
+    user: { id: string; email: string; name: string | null; image: string | null };
+    error?: string;
+  }>(res);
+  if (!res.ok) throw new Error(data.error ?? "Apple sign-in failed");
+  return data;
+}
+
+export async function loginWithGoogle(
+  payload: LoginGooglePayload
+): Promise<{ token: string; user: { id: string; email: string; name: string | null; image: string | null } }> {
+  const res = await fetchWithHint(`${API_BASE}/api/mobile/auth/google`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  const data = await parseJsonResponse<{
+    token: string;
+    user: { id: string; email: string; name: string | null; image: string | null };
+    error?: string;
+  }>(res);
+  if (!res.ok) throw new Error(data.error ?? "Google sign-in failed");
+  return data;
+}
+
 export async function getProfile(token: string): Promise<Profile> {
+  if (__DEV__ && (!token || token.length < 50)) {
+    console.warn("[getProfile] Token looks too short; may be truncated. Length:", token?.length ?? 0);
+  }
   const res = await fetchWithHint(`${API_BASE}/api/mobile/profile`, {
     headers: { Authorization: `Bearer ${token}` },
   });
   const data = await parseJsonResponse<Profile & { error?: string }>(res);
-  if (!res.ok) throw new Error(data.error ?? "Failed to load profile");
+  if (!res.ok) {
+    if (res.status === 401) {
+      const hint = data.error ?? "Unauthorized";
+      if (__DEV__) {
+        console.warn("[getProfile] 401 response body:", data);
+        if (hint.includes("missing") || hint.includes("token")) {
+          console.warn("Hint: ensure the app captures the JWT from the redirect URL and sends Authorization: Bearer <token>.");
+        }
+      }
+      throw new Error(hint);
+    }
+    throw new Error(data.error ?? "Failed to load profile");
+  }
   return data;
 }
 

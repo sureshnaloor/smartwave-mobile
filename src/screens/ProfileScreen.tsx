@@ -9,12 +9,15 @@ import {
   ScrollView,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useNavigation } from "@react-navigation/native";
 import { useAuth } from "../context/AuthContext";
 import { useTheme } from "../context/ThemeContext";
+import { ADMIN_CREATED_MESSAGE } from "../context/ProfilePermissionsContext";
 import { getProfile, updateProfile, type Profile } from "../api/client";
 
 export default function ProfileScreen() {
   const insets = useSafeAreaInsets();
+  const navigation = useNavigation();
   const { token } = useAuth();
   const { colors } = useTheme();
   const [profile, setProfile] = useState<Profile | null>(null);
@@ -94,6 +97,22 @@ export default function ProfileScreen() {
     return (
       <View style={[styles.centered, { backgroundColor: colors.background }]}>
         <Text style={[styles.errorText, { color: colors.error }]}>{error}</Text>
+      </View>
+    );
+  }
+
+  if (profile?.createdByAdminId) {
+    return (
+      <View style={[styles.container, styles.centered, { backgroundColor: colors.background }]}>
+        <View style={[styles.adminBlock, { backgroundColor: colors.card, borderColor: colors.border }]}>
+          <Text style={[styles.adminBlockText, { color: colors.textMuted }]}>{ADMIN_CREATED_MESSAGE}</Text>
+          <TouchableOpacity
+            style={[styles.backButton, { backgroundColor: colors.primary }]}
+            onPress={() => navigation.goBack()}
+          >
+            <Text style={styles.backButtonText}>Go back</Text>
+          </TouchableOpacity>
+        </View>
       </View>
     );
   }
@@ -194,4 +213,14 @@ const styles = StyleSheet.create({
   button: { flex: 1, borderRadius: 12, padding: 16, alignItems: "center", justifyContent: "center" },
   buttonDisabled: { opacity: 0.7 },
   buttonText: { color: "#fff", fontSize: 16, fontWeight: "600" },
+  adminBlock: {
+    margin: 24,
+    padding: 24,
+    borderRadius: 12,
+    borderWidth: 1,
+    maxWidth: 400,
+  },
+  adminBlockText: { fontSize: 15, lineHeight: 22, marginBottom: 20, textAlign: "center" },
+  backButton: { borderRadius: 12, padding: 16, alignItems: "center" },
+  backButtonText: { color: "#fff", fontSize: 16, fontWeight: "600" },
 });

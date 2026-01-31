@@ -1,4 +1,7 @@
 import "react-native-gesture-handler";
+import { useEffect } from "react";
+import { AppState, type AppStateStatus, Linking } from "react-native";
+import * as WebBrowser from "expo-web-browser";
 import { StatusBar } from "expo-status-bar";
 import { NavigationContainer } from "@react-navigation/native";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
@@ -8,6 +11,7 @@ import { SafeAreaProvider } from "react-native-safe-area-context";
 import { TouchableOpacity, Text, View, StyleSheet } from "react-native";
 import { AuthProvider, useAuth } from "./src/context/AuthContext";
 import { ThemeProvider, useTheme } from "./src/context/ThemeContext";
+import { ProfilePermissionsProvider, useProfilePermissions } from "./src/context/ProfilePermissionsContext";
 import SignInScreen from "./src/screens/SignInScreen";
 import HomeScreen from "./src/screens/HomeScreen";
 import ProfileScreen from "./src/screens/ProfileScreen";
@@ -20,6 +24,7 @@ const Drawer = createDrawerNavigator();
 
 function HomeStack() {
   const { colors } = useTheme();
+  const { canEditProfile } = useProfilePermissions();
   return (
     <Stack.Navigator
       screenOptions={{
@@ -32,11 +37,12 @@ function HomeStack() {
         name="HomeView"
         options={({ navigation }) => ({
           title: "Home",
-          headerRight: () => (
-            <TouchableOpacity onPress={() => navigation.navigate("EditProfile")}>
-              <Text style={{ color: colors.primary, fontSize: 16 }}>Edit</Text>
-            </TouchableOpacity>
-          ),
+          headerRight: () =>
+            canEditProfile ? (
+              <TouchableOpacity onPress={() => navigation.navigate("EditProfile")}>
+                <Text style={{ color: colors.primary, fontSize: 16 }}>Edit</Text>
+              </TouchableOpacity>
+            ) : null,
         })}
       >
         {({ navigation }) => <HomeScreen onEdit={() => navigation.navigate("EditProfile")} />}
@@ -177,17 +183,60 @@ const styles = StyleSheet.create({
   signOut: { borderBottomWidth: 0, borderTopWidth: 1, marginTop: "auto" },
 });
 
+/** Read only the token query param from the Google auth redirect URL. Do not use state, code, or any other param. */
+function extractTokenFromUrl(url: string | null): string | null {
+  if (!url || !url.includes("token=")) return null;
+  try {
+    const parsed = new URL(url);
+    const token = parsed.searchParams.get("token");
+    return token ? token.trim() : null;
+  } catch {
+    return null;
+  }
+}
+
+function DeepLinkAuthHandler() {
+  const { completeSignInWithToken } = useAuth();
+  useEffect(() => {
+    const handleUrl = async (url: string | null) => {
+      // Only the token query param from redirect URL; never state, code, or Google token.
+      const token = extractTokenFromUrl(url);
+      if (token) {
+        if (__DEV__) console.warn("[DeepLink] Captured token length:", token.length);
+        await completeSignInWithToken(token);
+      }
+    };
+    Linking.getInitialURL().then(handleUrl);
+    const sub = Linking.addEventListener("url", ({ url }) => handleUrl(url));
+    return () => sub.remove();
+  }, [completeSignInWithToken]);
+  return null;
+}
+
 export default function App() {
+  useEffect(() => {
+    WebBrowser.maybeCompleteAuthSession();
+  }, []);
+
+  useEffect(() => {
+    const sub = AppState.addEventListener("change", (state: AppStateStatus) => {
+      if (state === "active") WebBrowser.maybeCompleteAuthSession();
+    });
+    return () => sub.remove();
+  }, []);
   return (
     <SafeAreaProvider>
       <AuthProvider>
+        <DeepLinkAuthHandler />
         <ThemeProvider>
+          <ProfilePermissionsProvider>
           <NavigationContainer>
             <>
               <ThemedStatusBar />
               <AppNavigator />
             </>
           </NavigationContainer>
+          </ProfilePermissionsProvider>
         </ThemeProvider>
       </AuthProvider>
     </SafeAreaProvider>

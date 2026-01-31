@@ -2,6 +2,8 @@
   "expo": {
     "name": "smartwave-mobile",
     "slug": "smartwave-mobile",
+    "owner": "sureshnaloor",
+    "scheme": "smartwave",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
@@ -14,6 +16,7 @@
     },
     "ios": {
       "supportsTablet": true,
+      "usesAppleSignIn": true,
       "infoPlist": {
         "NSAppTransportSecurity": {
           "NSAllowsArbitraryLoads": true,
@@ -33,7 +36,8 @@
       "favicon": "./assets/favicon.png"
     },
     "plugins": [
-      "expo-secure-store"
+      "expo-secure-store",
+      "expo-apple-authentication"
     ]
   }
 }

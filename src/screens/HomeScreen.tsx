@@ -9,6 +9,7 @@ import {
   Image,
 } from "react-native";
 import { useAuth } from "../context/AuthContext";
+import { useProfilePermissions, ADMIN_CREATED_MESSAGE } from "../context/ProfilePermissionsContext";
 import { getProfile, type Profile } from "../api/client";
 import { useTheme } from "../context/ThemeContext";
 
@@ -37,6 +38,7 @@ function Row({
 export default function HomeScreen({ onEdit }: Props) {
   const { token } = useAuth();
   const { colors } = useTheme();
+  const { setCanEditProfile } = useProfilePermissions();
   const [profile, setProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -44,10 +46,13 @@ export default function HomeScreen({ onEdit }: Props) {
   useEffect(() => {
     if (!token) return;
     getProfile(token)
-      .then(setProfile)
+      .then((p) => {
+        setProfile(p);
+        setCanEditProfile(!p?.createdByAdminId);
+      })
       .catch((e) => setError(e instanceof Error ? e.message : "Failed to load"))
       .finally(() => setLoading(false));
-  }, [token]);
+  }, [token, setCanEditProfile]);
 
   if (loading) {
     return (
@@ -66,6 +71,7 @@ export default function HomeScreen({ onEdit }: Props) {
   }
 
   const name = [profile?.firstName, profile?.lastName].filter(Boolean).join(" ") || profile?.name || profile?.userEmail || "—";
+  const isAdminCreated = Boolean(profile?.createdByAdminId);
 
   return (
     <ScrollView
@@ -73,6 +79,11 @@ export default function HomeScreen({ onEdit }: Props) {
       contentContainerStyle={styles.content}
       showsVerticalScrollIndicator={false}
     >
+      {isAdminCreated && (
+        <View style={[styles.adminBanner, { backgroundColor: colors.card, borderColor: colors.border }]}>
+          <Text style={[styles.adminBannerText, { color: colors.textMuted }]}>{ADMIN_CREATED_MESSAGE}</Text>
+        </View>
+      )}
       <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
         <View style={styles.cardHeader}>
           {profile?.photo ? (
@@ -107,13 +118,15 @@ export default function HomeScreen({ onEdit }: Props) {
         <Row label="Website" value={profile?.website} colors={colors} />
       </View>
 
-      <TouchableOpacity
-        style={[styles.editButton, { backgroundColor: colors.primary }]}
-        onPress={onEdit}
-        activeOpacity={0.8}
-      >
-        <Text style={styles.editButtonText}>Edit profile</Text>
-      </TouchableOpacity>
+      {!isAdminCreated && (
+        <TouchableOpacity
+          style={[styles.editButton, { backgroundColor: colors.primary }]}
+          onPress={onEdit}
+          activeOpacity={0.8}
+        >
+          <Text style={styles.editButtonText}>Edit profile</Text>
+        </TouchableOpacity>
+      )}
     </ScrollView>
   );
 }
@@ -122,6 +135,13 @@ const styles = StyleSheet.create({
   container: { flex: 1 },
   content: { padding: 20, paddingBottom: 40 },
   centered: { flex: 1, justifyContent: "center", alignItems: "center" },
+  adminBanner: {
+    borderRadius: 12,
+    borderWidth: 1,
+    padding: 14,
+    marginBottom: 16,
+  },
+  adminBannerText: { fontSize: 13, lineHeight: 20 },
   card: {
     borderRadius: 16,
     borderWidth: 1,
