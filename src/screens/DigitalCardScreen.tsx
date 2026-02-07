@@ -112,24 +112,22 @@ export default function DigitalCardScreen() {
 
     try {
       setSaving(true);
-      
-      if (Platform.OS === "ios") {
-        try {
-          const { status } = await MediaLibrary.requestPermissionsAsync();
-          if (status !== "granted") {
-            Alert.alert(
-              "Permission Required",
-              "Please grant photo library access to save the card. Note: In Expo Go, full media library access may be limited. Consider creating a development build for full functionality."
-            );
-            return;
-          }
-        } catch (permError) {
+
+      try {
+        const { status } = await MediaLibrary.requestPermissionsAsync();
+        if (status !== "granted") {
           Alert.alert(
-            "Permission Error",
-            "Unable to request photo library permission. In Expo Go, media library access is limited. Consider creating a development build for full functionality."
+            "Permission Required",
+            "Please grant photo library access in Settings to save the card to your photos."
           );
           return;
         }
+      } catch (permError) {
+        Alert.alert(
+          "Permission Error",
+          "Unable to request photo library permission. Please enable storage/photos access in app Settings."
+        );
+        return;
       }
 
       const frontUri = await captureRef(frontRef.current, { format: "png", quality: 1.0 });
@@ -144,14 +142,15 @@ export default function DigitalCardScreen() {
 
         Alert.alert("Success", "Card saved to your photos!");
       } catch (saveError) {
+        console.error("Save to photos error:", saveError);
         Alert.alert(
-          "Save Limited",
-          "Direct save to photos is not available in Expo Go. Use the Share button instead, or create a development build for full functionality."
+          "Save Failed",
+          "Could not save to photos. Try the Share button to save or share the image."
         );
       }
     } catch (e) {
       console.error("Error saving card:", e);
-      Alert.alert("Error", "Failed to save card. Please try using the Share button instead.");
+      Alert.alert("Error", "Failed to save card. Please try the Share button instead.");
     } finally {
       setSaving(false);
     }
@@ -163,17 +162,17 @@ export default function DigitalCardScreen() {
     try {
       setSaving(true);
       const uri = await captureRef(frontRef.current, { format: "png", quality: 1.0 });
-      
-      await Share.share({
-        url: uri,
-        message: `Check out ${profile.name || "my"} digital business card`,
-      });
+      const message = `Check out ${profile.name || "my"} digital business card`;
+      if (Platform.OS === "android") {
+        await Share.share({ message, url: uri, type: "image/png" });
+      } else {
+        await Share.share({ url: uri, message });
+      }
     } catch (e: any) {
-      if (e?.message && !e.message.includes("User cancelled")) {
+      if (e?.message && !e.message.includes("User cancelled") && !e.message?.includes("canceled")) {
         console.error("Error sharing card:", e);
         Alert.alert("Error", "Failed to share card. Please try again.");
       }
-      // User cancelled - no need to show error
     } finally {
       setSaving(false);
     }

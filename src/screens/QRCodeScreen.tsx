@@ -80,42 +80,38 @@ export default function QRCodeScreen() {
         format: "png",
         quality: 1.0,
       });
-      
-      // Request permissions
-      if (Platform.OS === "ios") {
-        try {
-          const { status } = await MediaLibrary.requestPermissionsAsync();
-          if (status !== "granted") {
-            Alert.alert(
-              "Permission Required",
-              "Please grant photo library access to save the QR code. Note: In Expo Go, full media library access may be limited. Consider creating a development build for full functionality."
-            );
-            return;
-          }
-        } catch (permError) {
+
+      try {
+        const { status } = await MediaLibrary.requestPermissionsAsync();
+        if (status !== "granted") {
           Alert.alert(
-            "Permission Error",
-            "Unable to request photo library permission. In Expo Go, media library access is limited. Consider creating a development build for full functionality."
+            "Permission Required",
+            "Please grant photo library access in Settings to save the QR code to your photos."
           );
           return;
         }
+      } catch (permError) {
+        Alert.alert(
+          "Permission Error",
+          "Unable to request photo library permission. Please enable storage/photos access in app Settings."
+        );
+        return;
       }
 
-      // Save to media library
       try {
         const asset = await MediaLibrary.createAssetAsync(uri);
         await MediaLibrary.createAlbumAsync("SmartWave", asset, false);
         Alert.alert("Success", "QR code saved to your photos!");
       } catch (saveError) {
-        // Fallback: try to share instead if save fails
+        console.error("Save to photos error:", saveError);
         Alert.alert(
-          "Save Limited",
-          "Direct save to photos is not available in Expo Go. Use the Share button instead, or create a development build for full functionality."
+          "Save Failed",
+          "Could not save to photos. Try the Share button to save or share the image."
         );
       }
     } catch (e) {
       console.error("Error saving QR code:", e);
-      Alert.alert("Error", "Failed to save QR code. Please try using the Share button instead.");
+      Alert.alert("Error", "Failed to save QR code. Please try the Share button instead.");
     } finally {
       setSaving(false);
     }
@@ -131,19 +127,14 @@ export default function QRCodeScreen() {
         quality: 1.0,
       });
       
-      if (Platform.OS === "ios") {
-        await Share.share({
-          url: uri,
-          message: `Scan this QR code to add ${profile.name || "contact"} to your contacts`,
-        });
+      const message = `Scan this QR code to add ${profile.name || "contact"} to your contacts`;
+      if (Platform.OS === "android") {
+        await Share.share({ message, url: uri, type: "image/png" });
       } else {
-        await Share.share({
-          message: `Scan this QR code to add ${profile.name || "contact"} to your contacts`,
-          url: uri,
-        });
+        await Share.share({ url: uri, message });
       }
     } catch (e: any) {
-      if (e?.message && !e.message.includes("User cancelled")) {
+      if (e?.message && !e.message.includes("User cancelled") && !e.message?.includes("canceled")) {
         console.error("Error sharing QR code:", e);
         Alert.alert("Error", "Failed to share QR code. Please try again.");
       }
