@@ -47,10 +47,13 @@ function getTokenFromRedirectUrl(url: string): string | null {
   try {
     const parsed = new URL(url);
     const token = parsed.searchParams.get("token");
-    return token ? token.trim() : null;
+    if (token) return token.trim();
   } catch {
-    return null;
+    // Custom scheme URLs (e.g. smartwave://redirect?token=xxx) may not parse in all environments
   }
+  // Fallback: extract token= from the string (handles scheme-only and any parsing quirks)
+  const match = url.match(/[?&]token=([^&?#]+)/);
+  return match ? decodeURIComponent(match[1].trim()) : null;
 }
 
 export default function SignInScreen() {
@@ -108,12 +111,17 @@ export default function SignInScreen() {
     setError("");
     setGoogleLoading(true);
     try {
-      const returnUrl = AuthSession.makeRedirectUri();
+      // Use explicit scheme + path so production redirect is well-formed (smartwave://redirect?token=...)
+      const returnUrl =
+        AuthSession.makeRedirectUri({
+          scheme: "smartwave",
+          path: "redirect",
+        }) || AuthSession.makeRedirectUri();
+      if (__DEV__) console.warn("[Google sign-in] returnUrl:", returnUrl);
       const { code_verifier, code_challenge } = await generatePKCE();
       const { authUrl } = await getGoogleAuthStart(returnUrl, code_challenge, code_verifier);
       const result = await WebBrowser.openAuthSessionAsync(authUrl, returnUrl);
       if (result.type === "success" && result.url) {
-        // Only the token query param from redirect URL; never state, code, or Google token.
         const token = getTokenFromRedirectUrl(result.url);
         if (__DEV__ && token) console.warn("[Google sign-in] Captured token length:", token.length);
         if (token) {

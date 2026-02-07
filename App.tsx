@@ -297,20 +297,22 @@ function extractTokenFromUrl(url: string | null): string | null {
   try {
     const parsed = new URL(url);
     const token = parsed.searchParams.get("token");
-    return token ? token.trim() : null;
+    if (token) return token.trim();
   } catch {
-    return null;
+    // Custom scheme URLs (e.g. smartwave://redirect?token=xxx) may not parse in all environments
   }
+  const match = url.match(/[?&]token=([^&?#]+)/);
+  return match ? decodeURIComponent(match[1].trim()) : null;
 }
 
 function DeepLinkAuthHandler() {
   const { completeSignInWithToken } = useAuth();
   useEffect(() => {
     const handleUrl = async (url: string | null) => {
-      // Only the token query param from redirect URL; never state, code, or Google token.
       const token = extractTokenFromUrl(url);
       if (token) {
         if (__DEV__) console.warn("[DeepLink] Captured token length:", token.length);
+        WebBrowser.maybeCompleteAuthSession();
         await completeSignInWithToken(token);
       }
     };

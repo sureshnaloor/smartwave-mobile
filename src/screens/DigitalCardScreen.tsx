@@ -20,6 +20,7 @@ import { generateVCardData } from "../utils/vcard";
 import QRCode from "react-native-qrcode-svg";
 import { captureRef } from "react-native-view-shot";
 import * as MediaLibrary from "expo-media-library";
+import * as FileSystem from "expo-file-system";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 const CARD_WIDTH = SCREEN_WIDTH - 48;
@@ -133,9 +134,22 @@ export default function DigitalCardScreen() {
       const frontUri = await captureRef(frontRef.current, { format: "png", quality: 1.0 });
       const backUri = await captureRef(backRef.current, { format: "png", quality: 1.0 });
 
+      // On Android, createAssetAsync often fails with temp URIs from captureRef; copy to cache first
+      let frontToSave = frontUri;
+      let backToSave = backUri;
+      if (Platform.OS === "android") {
+        const cacheDir = FileSystem.cacheDirectory ?? "";
+        const frontPath = `${cacheDir}smartwave_card_front_${Date.now()}.png`;
+        const backPath = `${cacheDir}smartwave_card_back_${Date.now()}.png`;
+        await FileSystem.copyAsync({ from: frontUri, to: frontPath });
+        await FileSystem.copyAsync({ from: backUri, to: backPath });
+        frontToSave = frontPath;
+        backToSave = backPath;
+      }
+
       try {
-        const frontAsset = await MediaLibrary.createAssetAsync(frontUri);
-        const backAsset = await MediaLibrary.createAssetAsync(backUri);
+        const frontAsset = await MediaLibrary.createAssetAsync(frontToSave);
+        const backAsset = await MediaLibrary.createAssetAsync(backToSave);
 
         await MediaLibrary.createAlbumAsync("SmartWave", frontAsset, false);
         await MediaLibrary.addAssetsToAlbumAsync([backAsset], "SmartWave", false);
@@ -162,11 +176,19 @@ export default function DigitalCardScreen() {
     try {
       setSaving(true);
       const uri = await captureRef(frontRef.current, { format: "png", quality: 1.0 });
+      // On Android, Share may need a file path; copy to cache so the share intent can read it
+      let shareUri = uri;
+      if (Platform.OS === "android") {
+        const cacheDir = FileSystem.cacheDirectory ?? "";
+        const path = `${cacheDir}smartwave_card_share_${Date.now()}.png`;
+        await FileSystem.copyAsync({ from: uri, to: path });
+        shareUri = path;
+      }
       const message = `Check out ${profile.name || "my"} digital business card`;
       if (Platform.OS === "android") {
-        await Share.share({ message, url: uri, type: "image/png" });
+        await Share.share({ message, url: shareUri, type: "image/png" });
       } else {
-        await Share.share({ url: uri, message });
+        await Share.share({ url: shareUri, message });
       }
     } catch (e: any) {
       if (e?.message && !e.message.includes("User cancelled") && !e.message?.includes("canceled")) {

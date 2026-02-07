@@ -16,6 +16,7 @@ import { getProfile, type Profile } from "../api/client";
 import { generateVCardData } from "../utils/vcard";
 import QRCode from "react-native-qrcode-svg";
 import * as MediaLibrary from "expo-media-library";
+import * as FileSystem from "expo-file-system";
 import { captureRef } from "react-native-view-shot";
 
 type QRSize = "small" | "medium" | "large";
@@ -98,8 +99,15 @@ export default function QRCodeScreen() {
         return;
       }
 
+      let uriToSave = uri;
+      if (Platform.OS === "android") {
+        const cacheDir = FileSystem.cacheDirectory ?? "";
+        const path = `${cacheDir}smartwave_qr_${Date.now()}.png`;
+        await FileSystem.copyAsync({ from: uri, to: path });
+        uriToSave = path;
+      }
       try {
-        const asset = await MediaLibrary.createAssetAsync(uri);
+        const asset = await MediaLibrary.createAssetAsync(uriToSave);
         await MediaLibrary.createAlbumAsync("SmartWave", asset, false);
         Alert.alert("Success", "QR code saved to your photos!");
       } catch (saveError) {
@@ -126,12 +134,18 @@ export default function QRCodeScreen() {
         format: "png",
         quality: 1.0,
       });
-      
+      let shareUri = uri;
+      if (Platform.OS === "android") {
+        const cacheDir = FileSystem.cacheDirectory ?? "";
+        const path = `${cacheDir}smartwave_qr_share_${Date.now()}.png`;
+        await FileSystem.copyAsync({ from: uri, to: path });
+        shareUri = path;
+      }
       const message = `Scan this QR code to add ${profile.name || "contact"} to your contacts`;
       if (Platform.OS === "android") {
-        await Share.share({ message, url: uri, type: "image/png" });
+        await Share.share({ message, url: shareUri, type: "image/png" });
       } else {
-        await Share.share({ url: uri, message });
+        await Share.share({ url: shareUri, message });
       }
     } catch (e: any) {
       if (e?.message && !e.message.includes("User cancelled") && !e.message?.includes("canceled")) {
