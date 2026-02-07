@@ -14,3 +14,9 @@ export const getWalletAppleUrl = (shorturl: string) =>
 
 export const getWalletGoogleUrl = (shorturl: string) =>
   `${API_BASE}/api/wallet/google?shorturl=${encodeURIComponent(shorturl)}`;
+
+export const getPassWalletAppleUrl = (passId: string) =>
+  `${API_BASE}/api/mobile/wallet/apple?passId=${encodeURIComponent(passId)}`;
+
+export const getPassWalletGoogleUrl = (passId: string) =>
+  `${API_BASE}/api/mobile/wallet/google?passId=${encodeURIComponent(passId)}`;

@@ -1,5 +1,5 @@
 import "react-native-gesture-handler";
-import { useEffect } from "react";
+import React, { useEffect } from "react";
 import { AppState, type AppStateStatus, Linking } from "react-native";
 import * as WebBrowser from "expo-web-browser";
 import { StatusBar } from "expo-status-bar";
@@ -8,15 +8,21 @@ import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
 import { createDrawerNavigator } from "@react-navigation/drawer";
 import { SafeAreaProvider } from "react-native-safe-area-context";
-import { TouchableOpacity, Text, View, StyleSheet } from "react-native";
+import { TouchableOpacity, Text, View, StyleSheet, ActivityIndicator } from "react-native";
 import { AuthProvider, useAuth } from "./src/context/AuthContext";
 import { ThemeProvider, useTheme } from "./src/context/ThemeContext";
 import { ProfilePermissionsProvider, useProfilePermissions } from "./src/context/ProfilePermissionsContext";
 import SignInScreen from "./src/screens/SignInScreen";
 import HomeScreen from "./src/screens/HomeScreen";
+import EmployeeHomeScreen from "./src/screens/EmployeeHomeScreen";
 import ProfileScreen from "./src/screens/ProfileScreen";
 import WalletScreen from "./src/screens/WalletScreen";
 import SettingsScreen from "./src/screens/SettingsScreen";
+import DigitalCardScreen from "./src/screens/DigitalCardScreen";
+import QRCodeScreen from "./src/screens/QRCodeScreen";
+import PassesScreen from "./src/screens/PassesScreen";
+import PassDetailScreen from "./src/screens/PassDetailScreen";
+import NotificationsScreen from "./src/screens/NotificationsScreen";
 
 const Stack = createNativeStackNavigator();
 const Tab = createBottomTabNavigator();
@@ -45,12 +51,43 @@ function HomeStack() {
             ) : null,
         })}
       >
-        {({ navigation }) => <HomeScreen onEdit={() => navigation.navigate("EditProfile")} />}
+        {({ navigation }) =>
+          canEditProfile ? (
+            <HomeScreen onEdit={() => navigation.navigate("EditProfile")} navigation={navigation} />
+          ) : (
+            <EmployeeHomeScreen navigation={navigation} />
+          )
+        }
       </Stack.Screen>
       <Stack.Screen
         name="EditProfile"
         component={ProfileScreen}
         options={{ title: "Edit profile" }}
+      />
+      <Stack.Screen
+        name="DigitalCard"
+        component={DigitalCardScreen}
+        options={{ title: "Digital Card" }}
+      />
+      <Stack.Screen
+        name="QRCode"
+        component={QRCodeScreen}
+        options={{ title: "QR Code" }}
+      />
+      <Stack.Screen
+        name="Passes"
+        component={PassesScreen}
+        options={{ title: "Passes & Access" }}
+      />
+      <Stack.Screen
+        name="PassDetail"
+        component={PassDetailScreen}
+        options={{ title: "Pass Details" }}
+      />
+      <Stack.Screen
+        name="Notifications"
+        component={NotificationsScreen}
+        options={{ title: "Notifications" }}
       />
     </Stack.Navigator>
   );
@@ -101,7 +138,25 @@ function MainTabs() {
 
 function CustomDrawerContent({ navigation }: any) {
   const { colors } = useTheme();
-  const { signOut } = useAuth();
+  const { signOut, token } = useAuth();
+  const [unreadCount, setUnreadCount] = React.useState(0);
+
+  React.useEffect(() => {
+    if (!token) return;
+    const loadUnreadCount = async () => {
+      try {
+        const { getNotifications } = await import("./src/api/client");
+        const notifications = await getNotifications(token, false);
+        setUnreadCount(notifications.filter((n) => !n.isRead).length);
+      } catch (e) {
+        // Silently fail - notifications are optional
+      }
+    };
+    loadUnreadCount();
+    const interval = setInterval(loadUnreadCount, 30000); // Refresh every 30 seconds
+    return () => clearInterval(interval);
+  }, [token]);
+
   return (
     <View style={[styles.drawer, { backgroundColor: colors.card }]}>
       <View style={styles.drawerContent}>
@@ -110,6 +165,49 @@ function CustomDrawerContent({ navigation }: any) {
           onPress={() => { navigation.navigate("Main", { screen: "HomeTab" }); navigation.closeDrawer(); }}
         >
           <Text style={[styles.drawerItemText, { color: colors.text }]}>Home</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.drawerItem, { borderBottomColor: colors.border }]}
+          onPress={() => {
+            navigation.navigate("Main", {
+              screen: "HomeTab",
+              params: {
+                screen: "HomeView",
+                params: {
+                  screen: "Passes",
+                },
+              },
+            });
+            navigation.closeDrawer();
+          }}
+        >
+          <View style={styles.drawerItemWithBadge}>
+            <Text style={[styles.drawerItemText, { color: colors.text }]}>Passes & Access</Text>
+          </View>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.drawerItem, { borderBottomColor: colors.border }]}
+          onPress={() => {
+            navigation.navigate("Main", {
+              screen: "HomeTab",
+              params: {
+                screen: "HomeView",
+                params: {
+                  screen: "Notifications",
+                },
+              },
+            });
+            navigation.closeDrawer();
+          }}
+        >
+          <View style={styles.drawerItemWithBadge}>
+            <Text style={[styles.drawerItemText, { color: colors.text }]}>Notifications</Text>
+            {unreadCount > 0 && (
+              <View style={[styles.badge, { backgroundColor: colors.primary }]}>
+                <Text style={styles.badgeText}>{unreadCount > 99 ? "99+" : unreadCount}</Text>
+              </View>
+            )}
+          </View>
         </TouchableOpacity>
         <TouchableOpacity
           style={[styles.drawerItem, { borderBottomColor: colors.border }]}
@@ -140,12 +238,19 @@ function ThemedStatusBar() {
 }
 
 function AppNavigator() {
-  const { token, loading } = useAuth();
+  const { token, user, loading } = useAuth();
   const { colors } = useTheme();
 
-  if (loading) return null;
+  if (loading) {
+    return (
+      <View style={{ flex: 1, justifyContent: "center", alignItems: "center", backgroundColor: colors.background }}>
+        <ActivityIndicator size="large" color={colors.primary} />
+      </View>
+    );
+  }
 
-  if (!token) {
+  // Show sign-in if no token, or if token exists but user couldn't be loaded (network error, invalid token, etc.)
+  if (!token || !user) {
     return (
       <Stack.Navigator
         screenOptions={{
@@ -180,6 +285,9 @@ const styles = StyleSheet.create({
   drawerContent: { flex: 1 },
   drawerItem: { padding: 18, borderBottomWidth: 1 },
   drawerItemText: { fontSize: 16 },
+  drawerItemWithBadge: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", flex: 1 },
+  badge: { minWidth: 20, height: 20, borderRadius: 10, paddingHorizontal: 6, justifyContent: "center", alignItems: "center", marginLeft: 8 },
+  badgeText: { color: "#FFF", fontSize: 12, fontWeight: "600" },
   signOut: { borderBottomWidth: 0, borderTopWidth: 1, marginTop: "auto" },
 });
 

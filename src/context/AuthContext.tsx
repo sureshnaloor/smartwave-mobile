@@ -26,11 +26,71 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    SecureStore.getItemAsync(TOKEN_KEY).then((t) => {
-      setTokenState(t);
-      if (!t) setUser(null);
-      setLoading(false);
-    });
+    let cancelled = false;
+    
+    async function loadAndValidateToken() {
+      try {
+        const storedToken = await SecureStore.getItemAsync(TOKEN_KEY);
+        
+        if (!storedToken) {
+          if (!cancelled) {
+            setTokenState(null);
+            setUser(null);
+            setLoading(false);
+          }
+          return;
+        }
+
+        // Validate token by fetching profile
+        try {
+          const profile = await getProfile(storedToken);
+          if (!cancelled) {
+            setTokenState(storedToken);
+            setUser({
+              id: profile._id ?? "",
+              email: profile.userEmail,
+              name: profile.name ?? null,
+              image: profile.photo ?? null,
+            });
+            setLoading(false);
+          }
+        } catch (e) {
+          // Token is invalid, expired, or network error
+          const msg = e instanceof Error ? e.message : String(e);
+          
+          // Clear token if unauthorized or invalid
+          if (msg.includes("Unauthorized") || msg.includes("invalid") || msg.includes("expired") || msg.includes("missing")) {
+            await SecureStore.deleteItemAsync(TOKEN_KEY);
+            if (!cancelled) {
+              setTokenState(null);
+              setUser(null);
+              setLoading(false);
+            }
+          } else {
+            // Network error - keep token but don't set user
+            // User can retry or sign in again
+            if (!cancelled) {
+              setTokenState(storedToken);
+              setUser(null);
+              setLoading(false);
+            }
+          }
+        }
+      } catch (e) {
+        console.error("[AuthProvider] Error loading token:", e);
+        if (!cancelled) {
+          setTokenState(null);
+          setUser(null);
+          setLoading(false);
+        }
+      }
+    }
+
+    loadAndValidateToken();
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const setToken = (t: string | null) => {

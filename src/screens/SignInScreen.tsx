@@ -21,7 +21,7 @@ import { getGoogleAuthStart } from "../api/client";
 WebBrowser.maybeCompleteAuthSession();
 
 const ENTERPRISE_HINT =
-  "For enterprise / corporate users. For credentials, approach your enterprise administrator.";
+  "For company (corporate) employees. Sign in with the work email and password provided by your company admin.";
 
 function base64UrlEncode(bytes: Uint8Array): string {
   let binary = "";
@@ -136,6 +136,7 @@ export default function SignInScreen() {
   const handleAppleSignIn = async () => {
     setError("");
     setAppleLoading(true);
+    if (__DEV__) console.log("[Apple Sign-In] Starting…");
     try {
       const AppleAuth = await import("expo-apple-authentication");
       const credential = await AppleAuth.default.signInAsync({
@@ -146,16 +147,24 @@ export default function SignInScreen() {
       });
       const identityToken = credential.identityToken ?? null;
       if (identityToken) {
+        if (__DEV__) console.log("[Apple Sign-In] Got identity token, calling backend…");
         await signInWithApple(identityToken);
       } else {
         setError("Apple sign-in did not return a token.");
       }
     } catch (e) {
-      if ((e as { code?: string }).code === "ERR_REQUEST_CANCELED") {
+      const code = (e as { code?: string }).code;
+      if (code === "ERR_REQUEST_CANCELED") {
         // User cancelled – do nothing
+      } else if (code === "ERR_REQUEST_FAILED" || (e as Error).message?.includes("request")) {
+        setError(
+          "Sign in with Apple failed. Make sure you’re signed into an Apple ID in Settings on this device."
+        );
       } else {
-        setError(e instanceof Error ? e.message : "Apple sign-in failed");
+        const msg = e instanceof Error ? e.message : "Apple sign-in failed";
+        setError(msg);
       }
+      if (__DEV__) console.warn("[Apple Sign-In] Error:", e);
     } finally {
       setAppleLoading(false);
     }
@@ -172,11 +181,11 @@ export default function SignInScreen() {
         showsVerticalScrollIndicator={false}
       >
         <Text style={styles.title}>SmartWave</Text>
-        <Text style={styles.subtitle}>Sign in to your account</Text>
+        <Text style={styles.subtitle}>Choose the option that matches your profile.</Text>
 
-        {/* Enterprise / credentials */}
+        {/* Corporate / company sign-in */}
         <View style={styles.section}>
-          <Text style={styles.sectionLabel}>Enterprise / corporate</Text>
+          <Text style={styles.sectionLabel}>Corporate sign-in</Text>
           <TextInput
             style={styles.input}
             placeholder="Email"
@@ -207,6 +216,18 @@ export default function SignInScreen() {
               <Text style={styles.buttonText}>Sign in with email</Text>
             )}
           </TouchableOpacity>
+          <View style={styles.adminHintContainer}>
+            <Text style={styles.adminHintTitle}>Admins</Text>
+            <Text style={styles.adminHintText}>
+              For Admin and Public Admin access to manage corporate profiles, continue on the web admin portal.
+            </Text>
+            <TouchableOpacity
+              style={[styles.button, styles.adminButton]}
+              onPress={() => WebBrowser.openBrowserAsync(`${API_BASE.replace(/\/$/, "")}/admin/login`)}
+            >
+              <Text style={styles.buttonText}>Open Admin sign-in (web)</Text>
+            </TouchableOpacity>
+          </View>
         </View>
 
         <View style={styles.divider}>
@@ -215,11 +236,11 @@ export default function SignInScreen() {
           <View style={styles.dividerLine} />
         </View>
 
-        {/* Google sign-in */}
+        {/* Retail / individual sign-in */}
         <View style={styles.section}>
-          <Text style={styles.sectionLabel}>Sign in with Google</Text>
+          <Text style={styles.sectionLabel}>Retail / individual sign-in</Text>
           <Text style={styles.googleHint}>
-            Use your Google account. Same whether you are already registered or not.
+            Use your personal Google account to access SmartWave.
           </Text>
           <TouchableOpacity
             style={[styles.button, styles.googleButton, googleLoading && styles.buttonDisabled]}
@@ -255,6 +276,7 @@ export default function SignInScreen() {
                 </>
               )}
             </TouchableOpacity>
+            <Text style={styles.hint}>Requires an Apple ID signed in on this device (Settings → Apple ID).</Text>
           </View>
         )}
 
@@ -338,6 +360,7 @@ const styles = StyleSheet.create({
   dividerLine: { flex: 1, height: 1, backgroundColor: "#334155" },
   dividerText: { color: "#64748b", paddingHorizontal: 12, fontSize: 14 },
   googleHint: { fontSize: 12, color: "#94a3b8", marginBottom: 12 },
+  hint: { fontSize: 12, color: "#64748b", textAlign: "center", marginTop: 8 },
   error: { color: "#f87171", marginTop: 16, textAlign: "center" },
   devHint: {
     marginTop: 32,
