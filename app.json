@@ -25,6 +25,7 @@
       }
     },
     "android": {
+      "package": "com.smartwave.mobile",
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#ffffff"
