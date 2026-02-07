@@ -10,6 +10,7 @@ import {
   Animated,
   Dimensions,
   Alert,
+  Linking,
   Platform,
   Share,
 } from "react-native";
@@ -19,8 +20,10 @@ import { getProfile, type Profile } from "../api/client";
 import { generateVCardData } from "../utils/vcard";
 import QRCode from "react-native-qrcode-svg";
 import { captureRef } from "react-native-view-shot";
+import Constants from "expo-constants";
 import * as MediaLibrary from "expo-media-library";
-import * as FileSystem from "expo-file-system";
+import * as FileSystem from "expo-file-system/legacy";
+import * as Sharing from "expo-sharing";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 const CARD_WIDTH = SCREEN_WIDTH - 48;
@@ -111,6 +114,19 @@ export default function DigitalCardScreen() {
   const downloadCard = async () => {
     if (!frontRef.current || !backRef.current || !profile) return;
 
+    // Expo Go on Android cannot save to photos (Expo limitation). Offer Share instead.
+    if (Platform.OS === "android" && Constants.appOwnership === "expo") {
+      Alert.alert(
+        "Save in Expo Go",
+        "Save to photos isn't available in Expo Go on Android. Use Share and choose \"Save image\" or your photos app.",
+        [
+          { text: "OK", style: "cancel" },
+          { text: "Share instead", onPress: shareCard },
+        ]
+      );
+      return;
+    }
+
     try {
       setSaving(true);
 
@@ -119,14 +135,22 @@ export default function DigitalCardScreen() {
         if (status !== "granted") {
           Alert.alert(
             "Permission Required",
-            "Please grant photo library access in Settings to save the card to your photos."
+            "Please grant photo library access to save the card to your photos.",
+            [
+              { text: "Cancel", style: "cancel" },
+              { text: "Open Settings", onPress: () => Linking.openSettings() },
+            ]
           );
           return;
         }
       } catch (permError) {
         Alert.alert(
-          "Permission Error",
-          "Unable to request photo library permission. Please enable storage/photos access in app Settings."
+          "Permission Required",
+          "Please enable storage/photos access in Settings to save the card.",
+          [
+            { text: "Cancel", style: "cancel" },
+            { text: "Open Settings", onPress: () => Linking.openSettings() },
+          ]
         );
         return;
       }
@@ -176,19 +200,19 @@ export default function DigitalCardScreen() {
     try {
       setSaving(true);
       const uri = await captureRef(frontRef.current, { format: "png", quality: 1.0 });
-      // On Android, Share may need a file path; copy to cache so the share intent can read it
-      let shareUri = uri;
-      if (Platform.OS === "android") {
-        const cacheDir = FileSystem.cacheDirectory ?? "";
-        const path = `${cacheDir}smartwave_card_share_${Date.now()}.png`;
-        await FileSystem.copyAsync({ from: uri, to: path });
-        shareUri = path;
-      }
-      const message = `Check out ${profile.name || "my"} digital business card`;
-      if (Platform.OS === "android") {
-        await Share.share({ message, url: shareUri, type: "image/png" });
+      // Copy to a local file so we can share as image (expo-sharing shows "Save image" etc.)
+      const cacheDir = FileSystem.cacheDirectory ?? "";
+      const path = `${cacheDir}smartwave_card_share_${Date.now()}.png`;
+      await FileSystem.copyAsync({ from: uri, to: path });
+      const isAvailable = await Sharing.isAvailableAsync();
+      if (isAvailable) {
+        await Sharing.shareAsync(path, {
+          mimeType: "image/png",
+          dialogTitle: "Share card",
+        });
       } else {
-        await Share.share({ url: shareUri, message });
+        const message = `Check out ${profile.name || "my"} digital business card`;
+        await Share.share({ url: path, message });
       }
     } catch (e: any) {
       if (e?.message && !e.message.includes("User cancelled") && !e.message?.includes("canceled")) {

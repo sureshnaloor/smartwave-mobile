@@ -131,11 +131,29 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         image: profile.photo ?? null,
       });
     } catch (e) {
-      setUser(null);
       const msg = e instanceof Error ? e.message : String(e);
-      if (msg.includes("Unauthorized") || msg.includes("missing") || msg.includes("invalid")) {
+      const isInvalidToken =
+        msg.includes("Unauthorized") || msg.includes("missing") || msg.includes("invalid") || msg.includes("expired");
+      if (isInvalidToken) {
         await SecureStore.deleteItemAsync(TOKEN_KEY);
         setTokenState(null);
+        setUser(null);
+      } else {
+        // Network or other error: keep token and set minimal user from JWT so user reaches home (profile can load there)
+        try {
+          const b64 = (token.split(".")[1] ?? "").replace(/-/g, "+").replace(/_/g, "/");
+          const padded = b64 + "==".slice(0, (3 - (b64.length % 3)) % 3);
+          const decoded = typeof atob !== "undefined" ? atob(padded) : (globalThis as { atob?: (s: string) => string }).atob?.(padded) ?? "";
+          const payload = JSON.parse(decoded) as { email?: string; id?: string; sub?: string };
+          setUser({
+            id: payload.id ?? payload.sub ?? "",
+            email: payload.email ?? "",
+            name: null,
+            image: null,
+          });
+        } catch {
+          setUser(null);
+        }
       }
     }
   };

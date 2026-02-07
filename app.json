@@ -15,6 +15,7 @@
       "backgroundColor": "#ffffff"
     },
     "ios": {
+      "bundleIdentifier": "com.smartwave.mobile",
       "supportsTablet": true,
       "usesAppleSignIn": true,
       "infoPlist": {

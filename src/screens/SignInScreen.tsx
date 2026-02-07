@@ -14,6 +14,7 @@ import * as WebBrowser from "expo-web-browser";
 import * as AuthSession from "expo-auth-session";
 import * as Crypto from "expo-crypto";
 import * as Clipboard from "expo-clipboard";
+import Constants from "expo-constants";
 import { useAuth } from "../context/AuthContext";
 import { GOOGLE_WEB_CLIENT_ID, API_BASE } from "../config";
 import { getGoogleAuthStart } from "../api/client";
@@ -111,13 +112,12 @@ export default function SignInScreen() {
     setError("");
     setGoogleLoading(true);
     try {
-      // Use explicit scheme + path so production redirect is well-formed (smartwave://redirect?token=...)
-      const returnUrl =
-        AuthSession.makeRedirectUri({
-          scheme: "smartwave",
-          path: "redirect",
-        }) || AuthSession.makeRedirectUri();
-      if (__DEV__) console.warn("[Google sign-in] returnUrl:", returnUrl);
+      // In Expo Go, redirect must go back to Expo Go (exp://...). In standalone/dev build, use custom scheme.
+      const isExpoGo = Constants.appOwnership === "expo";
+      const returnUrl = isExpoGo
+        ? AuthSession.makeRedirectUri()
+        : (AuthSession.makeRedirectUri({ scheme: "smartwave", path: "redirect" }) || AuthSession.makeRedirectUri());
+      if (__DEV__) console.warn("[Google sign-in] returnUrl:", returnUrl, "isExpoGo:", isExpoGo);
       const { code_verifier, code_challenge } = await generatePKCE();
       const { authUrl } = await getGoogleAuthStart(returnUrl, code_challenge, code_verifier);
       const result = await WebBrowser.openAuthSessionAsync(authUrl, returnUrl);

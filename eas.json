@@ -5,7 +5,11 @@
   "build": {
     "development": {
       "developmentClient": true,
-      "distribution": "internal"
+      "distribution": "internal",
+      "env": {
+        "EXPO_PUBLIC_API_URL": "https://www.smartwave.name",
+        "EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID": "698373238257-qpsus19n1bnf8rogjm8ot9tvnbouccau.apps.googleusercontent.com"
+      }
     },
     "preview": {
       "distribution": "internal",

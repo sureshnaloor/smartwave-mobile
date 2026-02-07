@@ -33,3 +33,16 @@ Ensure the backend uses the same base URL when building the callback:
 - Or leave it unset so the server uses the request origin (correct when the request hits `https://www.smartwave.name`).
 
 After changing redirect URIs in Google Cloud, wait a few minutes and try sign-in again.
+
+---
+
+## App returns to sign-in after Google consent (404 on profile)
+
+If Vercel logs show **GET /api/mobile/profile → 404** after a successful **GET /api/mobile/auth/google/callback → 307**, the backend was returning "Profile not found" because new Google users had a `users` record but no `profiles` record.
+
+**Fix (backend, already applied):**
+
+1. **Google callback** (`smartwave/app/api/mobile/auth/google/callback/route.ts`) now ensures a profile exists (via `generateAndUpdateShortUrl`) before redirecting with the token.
+2. **GET /api/mobile/profile** creates a minimal profile on first request if missing, so valid tokens no longer get 404.
+
+Redeploy the **smartwave** (Next.js) app to Vercel so these changes are live. No new mobile app build is required; version 3 will work once the backend is redeployed.

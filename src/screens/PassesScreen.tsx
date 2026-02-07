@@ -24,7 +24,7 @@ export default function PassesScreen({ navigation }: Props) {
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState("");
   const [data, setData] = useState<PassesResponse | null>(null);
-  const [activeTab, setActiveTab] = useState<"corporate" | "public">("corporate");
+  const [activeTab, setActiveTab] = useState<"corporate" | "public">("public");
 
   const loadPasses = async () => {
     if (!token) {
@@ -152,43 +152,41 @@ export default function PassesScreen({ navigation }: Props) {
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
-      {/* Tabs */}
-      {isEmployee && (
-        <View style={styles.tabs}>
-          <TouchableOpacity
+      {/* Tabs: show for all users so retail (Google) users can view and opt for public passes */}
+      <View style={[styles.tabs, { borderBottomColor: colors.border }]}>
+        <TouchableOpacity
+          style={[
+            styles.tab,
+            activeTab === "corporate" && { borderBottomColor: colors.primary, borderBottomWidth: 2 },
+          ]}
+          onPress={() => setActiveTab("corporate")}
+        >
+          <Text
             style={[
-              styles.tab,
-              activeTab === "corporate" && { borderBottomColor: colors.primary, borderBottomWidth: 2 },
+              styles.tabText,
+              { color: activeTab === "corporate" ? colors.primary : colors.textMuted },
             ]}
-            onPress={() => setActiveTab("corporate")}
           >
-            <Text
-              style={[
-                styles.tabText,
-                { color: activeTab === "corporate" ? colors.primary : colors.textMuted },
-              ]}
-            >
-              Corporate ({corporatePasses.length})
-            </Text>
-          </TouchableOpacity>
-          <TouchableOpacity
+            Corporate ({corporatePasses.length})
+          </Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[
+            styles.tab,
+            activeTab === "public" && { borderBottomColor: colors.primary, borderBottomWidth: 2 },
+          ]}
+          onPress={() => setActiveTab("public")}
+        >
+          <Text
             style={[
-              styles.tab,
-              activeTab === "public" && { borderBottomColor: colors.primary, borderBottomWidth: 2 },
+              styles.tabText,
+              { color: activeTab === "public" ? colors.primary : colors.textMuted },
             ]}
-            onPress={() => setActiveTab("public")}
           >
-            <Text
-              style={[
-                styles.tabText,
-                { color: activeTab === "public" ? colors.primary : colors.textMuted },
-              ]}
-            >
-              Public ({publicPasses.length})
-            </Text>
-          </TouchableOpacity>
-        </View>
-      )}
+            Public ({publicPasses.length})
+          </Text>
+        </TouchableOpacity>
+      </View>
 
       <ScrollView
         style={styles.scrollView}

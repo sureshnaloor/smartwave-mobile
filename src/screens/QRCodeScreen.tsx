@@ -7,6 +7,7 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   Alert,
+  Linking,
   Platform,
   Share,
 } from "react-native";
@@ -15,8 +16,10 @@ import { useTheme } from "../context/ThemeContext";
 import { getProfile, type Profile } from "../api/client";
 import { generateVCardData } from "../utils/vcard";
 import QRCode from "react-native-qrcode-svg";
+import Constants from "expo-constants";
 import * as MediaLibrary from "expo-media-library";
-import * as FileSystem from "expo-file-system";
+import * as FileSystem from "expo-file-system/legacy";
+import * as Sharing from "expo-sharing";
 import { captureRef } from "react-native-view-shot";
 
 type QRSize = "small" | "medium" | "large";
@@ -75,6 +78,19 @@ export default function QRCodeScreen() {
   const downloadQRCode = async () => {
     if (!qrRef.current || !profile) return;
 
+    // Expo Go on Android cannot save to photos (Expo limitation). Offer Share instead.
+    if (Platform.OS === "android" && Constants.appOwnership === "expo") {
+      Alert.alert(
+        "Save in Expo Go",
+        "Save to photos isn't available in Expo Go on Android. Use Share and choose \"Save image\" or your photos app.",
+        [
+          { text: "OK", style: "cancel" },
+          { text: "Share instead", onPress: shareQRCode },
+        ]
+      );
+      return;
+    }
+
     try {
       setSaving(true);
       const uri = await captureRef(qrRef.current, {
@@ -87,14 +103,22 @@ export default function QRCodeScreen() {
         if (status !== "granted") {
           Alert.alert(
             "Permission Required",
-            "Please grant photo library access in Settings to save the QR code to your photos."
+            "Please grant photo library access to save the QR code to your photos.",
+            [
+              { text: "Cancel", style: "cancel" },
+              { text: "Open Settings", onPress: () => Linking.openSettings() },
+            ]
           );
           return;
         }
       } catch (permError) {
         Alert.alert(
-          "Permission Error",
-          "Unable to request photo library permission. Please enable storage/photos access in app Settings."
+          "Permission Required",
+          "Please enable storage/photos access in Settings to save the QR code.",
+          [
+            { text: "Cancel", style: "cancel" },
+            { text: "Open Settings", onPress: () => Linking.openSettings() },
+          ]
         );
         return;
       }
@@ -134,18 +158,18 @@ export default function QRCodeScreen() {
         format: "png",
         quality: 1.0,
       });
-      let shareUri = uri;
-      if (Platform.OS === "android") {
-        const cacheDir = FileSystem.cacheDirectory ?? "";
-        const path = `${cacheDir}smartwave_qr_share_${Date.now()}.png`;
-        await FileSystem.copyAsync({ from: uri, to: path });
-        shareUri = path;
-      }
-      const message = `Scan this QR code to add ${profile.name || "contact"} to your contacts`;
-      if (Platform.OS === "android") {
-        await Share.share({ message, url: shareUri, type: "image/png" });
+      const cacheDir = FileSystem.cacheDirectory ?? "";
+      const path = `${cacheDir}smartwave_qr_share_${Date.now()}.png`;
+      await FileSystem.copyAsync({ from: uri, to: path });
+      const isAvailable = await Sharing.isAvailableAsync();
+      if (isAvailable) {
+        await Sharing.shareAsync(path, {
+          mimeType: "image/png",
+          dialogTitle: "Share QR code",
+        });
       } else {
-        await Share.share({ url: shareUri, message });
+        const message = `Scan this QR code to add ${profile.name || "contact"} to your contacts`;
+        await Share.share({ url: path, message });
       }
     } catch (e: any) {
       if (e?.message && !e.message.includes("User cancelled") && !e.message?.includes("canceled")) {
