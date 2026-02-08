@@ -19,11 +19,31 @@ import { useTheme } from "../context/ThemeContext";
 import { getProfile, type Profile } from "../api/client";
 import { generateVCardData } from "../utils/vcard";
 import QRCode from "react-native-qrcode-svg";
-import { captureRef } from "react-native-view-shot";
 import Constants from "expo-constants";
+import { CardFrontCanvas, CardBackCanvas, CombinedCardCanvas, type ThemeExport } from "../components/CardExportCanvas";
+import ViewShot from "react-native-view-shot";
 import * as MediaLibrary from "expo-media-library";
 import * as FileSystem from "expo-file-system/legacy";
 import * as Sharing from "expo-sharing";
+
+/** Get QR as base64 (same strategy as QRCodeScreen – no view-shot on SVG). */
+function getQRBase64(
+  qrRef: React.RefObject<{ toDataURL: (cb: (data: string) => void) => void } | null>
+): Promise<string> {
+  return new Promise((resolve, reject) => {
+    if (!qrRef.current) {
+      reject(new Error("QR not ready"));
+      return;
+    }
+    qrRef.current.toDataURL((data: string) => {
+      if (!data) {
+        reject(new Error("Failed to generate QR image"));
+        return;
+      }
+      resolve(data.replace(/(\r\n|\n|\r)/gm, ""));
+    });
+  });
+}
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 const CARD_WIDTH = SCREEN_WIDTH - 48;
@@ -61,9 +81,17 @@ export default function DigitalCardScreen() {
   const [showFront, setShowFront] = useState(true);
   const [currentTheme, setCurrentTheme] = useState<Theme>("smartwave");
   const [saving, setSaving] = useState(false);
+  const [qrBase64ForExport, setQrBase64ForExport] = useState<string | null>(null);
+  const [qrFileUriForExport, setQrFileUriForExport] = useState<string | null>(null);
+  const [qrUriForViewShot, setQrUriForViewShot] = useState<string | null>(null);
   const flipAnim = useRef(new Animated.Value(0)).current;
   const frontRef = useRef<View>(null);
   const backRef = useRef<View>(null);
+  const qrSvgRef = useRef<{ toDataURL: (cb: (data: string) => void) => void } | null>(null);
+  const frontCanvasRef = useRef<{ makeImageSnapshotAsync: () => Promise<{ encodeToBase64: () => string }> }>(null);
+  const backCanvasRef = useRef<{ makeImageSnapshotAsync: () => Promise<{ encodeToBase64: () => string }> }>(null);
+  const combinedCanvasRef = useRef<{ makeImageSnapshotAsync: () => Promise<{ encodeToBase64: () => string }> }>(null);
+  const viewShotRef = useRef<ViewShot>(null);
 
   useEffect(() => {
     if (__DEV__) {
@@ -111,10 +139,16 @@ export default function DigitalCardScreen() {
     setCurrentTheme(themes[nextIndex]);
   };
 
-  const downloadCard = async () => {
-    if (!frontRef.current || !backRef.current || !profile) return;
+  const ensureFileUri = (path: string): string => {
+    if (Platform.OS === "android" && !path.startsWith("file://")) {
+      return `file://${path}`;
+    }
+    return path;
+  };
 
-    // Expo Go on Android cannot save to photos (Expo limitation). Offer Share instead.
+  const downloadCard = async () => {
+    if (!profile || !frontCanvasRef.current || !backCanvasRef.current) return;
+
     if (Platform.OS === "android" && Constants.appOwnership === "expo") {
       Alert.alert(
         "Save in Expo Go",
@@ -130,23 +164,11 @@ export default function DigitalCardScreen() {
     try {
       setSaving(true);
 
-      try {
-        const { status } = await MediaLibrary.requestPermissionsAsync();
-        if (status !== "granted") {
-          Alert.alert(
-            "Permission Required",
-            "Please grant photo library access to save the card to your photos.",
-            [
-              { text: "Cancel", style: "cancel" },
-              { text: "Open Settings", onPress: () => Linking.openSettings() },
-            ]
-          );
-          return;
-        }
-      } catch (permError) {
+      const { status } = await MediaLibrary.requestPermissionsAsync();
+      if (status !== "granted") {
         Alert.alert(
           "Permission Required",
-          "Please enable storage/photos access in Settings to save the card.",
+          "Please grant photo library access to save the card to your photos.",
           [
             { text: "Cancel", style: "cancel" },
             { text: "Open Settings", onPress: () => Linking.openSettings() },
@@ -155,72 +177,161 @@ export default function DigitalCardScreen() {
         return;
       }
 
-      const frontUri = await captureRef(frontRef.current, { format: "png", quality: 1.0 });
-      const backUri = await captureRef(backRef.current, { format: "png", quality: 1.0 });
-
-      // On Android, createAssetAsync often fails with temp URIs from captureRef; copy to cache first
-      let frontToSave = frontUri;
-      let backToSave = backUri;
+      const qrBase64 = await getQRBase64(qrSvgRef);
+      setQrBase64ForExport(qrBase64);
       if (Platform.OS === "android") {
         const cacheDir = FileSystem.cacheDirectory ?? "";
-        const frontPath = `${cacheDir}smartwave_card_front_${Date.now()}.png`;
-        const backPath = `${cacheDir}smartwave_card_back_${Date.now()}.png`;
-        await FileSystem.copyAsync({ from: frontUri, to: frontPath });
-        await FileSystem.copyAsync({ from: backUri, to: backPath });
-        frontToSave = frontPath;
-        backToSave = backPath;
+        const qrPath = `${cacheDir}smartwave_qr_export_${Date.now()}.png`;
+        await FileSystem.writeAsStringAsync(qrPath, qrBase64, { encoding: "base64" });
+        setQrFileUriForExport(qrPath);
       }
+      await new Promise((r) => setTimeout(r, 500));
 
-      try {
-        const frontAsset = await MediaLibrary.createAssetAsync(frontToSave);
-        const backAsset = await MediaLibrary.createAssetAsync(backToSave);
+      const frontSnap = await frontCanvasRef.current?.makeImageSnapshotAsync();
+      const backSnap = await backCanvasRef.current?.makeImageSnapshotAsync();
+      if (!frontSnap || !backSnap) throw new Error("Could not generate card images");
 
-        await MediaLibrary.createAlbumAsync("SmartWave", frontAsset, false);
-        await MediaLibrary.addAssetsToAlbumAsync([backAsset], "SmartWave", false);
+      const frontBase64 = frontSnap.encodeToBase64();
+      const backBase64 = backSnap.encodeToBase64();
+      const cacheDir = FileSystem.cacheDirectory ?? "";
+      const frontPath = `${cacheDir}smartwave_card_front_${Date.now()}.png`;
+      const backPath = `${cacheDir}smartwave_card_back_${Date.now()}.png`;
+      await FileSystem.writeAsStringAsync(frontPath, frontBase64, { encoding: "base64" });
+      await FileSystem.writeAsStringAsync(backPath, backBase64, { encoding: "base64" });
 
-        Alert.alert("Success", "Card saved to your photos!");
-      } catch (saveError) {
-        console.error("Save to photos error:", saveError);
-        Alert.alert(
-          "Save Failed",
-          "Could not save to photos. Try the Share button to save or share the image."
-        );
-      }
+      const frontAsset = await MediaLibrary.createAssetAsync(ensureFileUri(frontPath));
+      const backAsset = await MediaLibrary.createAssetAsync(ensureFileUri(backPath));
+      const album = await MediaLibrary.createAlbumAsync("SmartWave", frontAsset, true);
+      await MediaLibrary.addAssetsToAlbumAsync([backAsset], album, true);
+      Alert.alert("Success", "Card saved to your photos (Recent and SmartWave album).");
     } catch (e) {
       console.error("Error saving card:", e);
-      Alert.alert("Error", "Failed to save card. Please try the Share button instead.");
+      Alert.alert("Error", "Failed to save card. Please try again.");
     } finally {
       setSaving(false);
+      setQrBase64ForExport(null);
+      setQrFileUriForExport(null);
     }
   };
 
   const shareCard = async () => {
-    if (!frontRef.current || !profile) return;
+    if (!profile || !combinedCanvasRef.current) return;
 
     try {
       setSaving(true);
-      const uri = await captureRef(frontRef.current, { format: "png", quality: 1.0 });
-      // Copy to a local file so we can share as image (expo-sharing shows "Save image" etc.)
+      const qrBase64 = await getQRBase64(qrSvgRef);
+      setQrBase64ForExport(qrBase64);
+      if (Platform.OS === "android") {
+        const cacheDir = FileSystem.cacheDirectory ?? "";
+        const qrPath = `${cacheDir}smartwave_qr_share_${Date.now()}.png`;
+        await FileSystem.writeAsStringAsync(qrPath, qrBase64, { encoding: "base64" });
+        setQrFileUriForExport(qrPath);
+      }
+      await new Promise((r) => setTimeout(r, 500));
+
+      const combinedSnap = await combinedCanvasRef.current?.makeImageSnapshotAsync();
+      if (!combinedSnap) throw new Error("Could not generate card image");
+
+      const base64 = combinedSnap.encodeToBase64();
       const cacheDir = FileSystem.cacheDirectory ?? "";
       const path = `${cacheDir}smartwave_card_share_${Date.now()}.png`;
-      await FileSystem.copyAsync({ from: uri, to: path });
+      await FileSystem.writeAsStringAsync(path, base64, { encoding: "base64" });
       const isAvailable = await Sharing.isAvailableAsync();
       if (isAvailable) {
-        await Sharing.shareAsync(path, {
-          mimeType: "image/png",
-          dialogTitle: "Share card",
-        });
+        await Sharing.shareAsync(path, { mimeType: "image/png", dialogTitle: "Share card (front + back)" });
       } else {
-        const message = `Check out ${profile.name || "my"} digital business card`;
-        await Share.share({ url: path, message });
+        await Share.share({ url: path, message: `Check out ${profile.name || "my"} digital business card` });
       }
-    } catch (e: any) {
-      if (e?.message && !e.message.includes("User cancelled") && !e.message?.includes("canceled")) {
+    } catch (e: unknown) {
+      const err = e as { message?: string };
+      if (err?.message && !err.message.includes("User cancelled") && !err.message?.includes("canceled")) {
         console.error("Error sharing card:", e);
         Alert.alert("Error", "Failed to share card. Please try again.");
       }
     } finally {
       setSaving(false);
+      setQrBase64ForExport(null);
+      setQrFileUriForExport(null);
+    }
+  };
+
+  const saveWithViewShot = async () => {
+    const hasRef = !!viewShotRef.current;
+    if (__DEV__) {
+      console.log("[ViewShot] saveWithViewShot called", {
+        hasProfile: !!profile,
+        hasViewShotRef: hasRef,
+        platform: Platform.OS,
+      });
+    }
+    if (!profile || !viewShotRef.current) return;
+
+    if (Platform.OS === "android" && Constants.appOwnership === "expo") {
+      Alert.alert(
+        "Save in Expo Go",
+        "Save to photos isn't available in Expo Go on Android. Use the other Save or Share buttons.",
+        [{ text: "OK", style: "cancel" }]
+      );
+      return;
+    }
+
+    try {
+      setSaving(true);
+      if (__DEV__) console.log("[ViewShot] Requesting media permission…");
+      const { status } = await MediaLibrary.requestPermissionsAsync();
+      if (status !== "granted") {
+        Alert.alert(
+          "Permission Required",
+          "Please grant photo library access to save the card.",
+          [
+            { text: "Cancel", style: "cancel" },
+            { text: "Open Settings", onPress: () => Linking.openSettings() },
+          ]
+        );
+        return;
+      }
+      if (__DEV__) console.log("[ViewShot] Permission granted, getting QR base64…");
+
+      const qrBase64 = await getQRBase64(qrSvgRef);
+      if (__DEV__) console.log("[ViewShot] QR base64 length:", qrBase64?.length ?? 0);
+
+      // Use data URI only (no file://) so ViewShot view has no remote/file images – improves snapshot success on Android
+      setQrUriForViewShot(`data:image/png;base64,${qrBase64}`);
+      if (__DEV__) console.log("[ViewShot] Set qrUriForViewShot (data-uri only)");
+
+      const delayMs = 1200;
+      if (__DEV__) console.log("[ViewShot] Waiting", delayMs, "ms for view/images to render…");
+      await new Promise((r) => setTimeout(r, delayMs));
+
+      if (!viewShotRef.current) {
+        if (__DEV__) console.warn("[ViewShot] viewShotRef.current is null after delay");
+        throw new Error("Capture view unavailable after delay");
+      }
+      if (__DEV__) console.log("[ViewShot] Calling capture()…");
+      const uri = await (viewShotRef.current as { capture: () => Promise<string> }).capture();
+      if (__DEV__) console.log("[ViewShot] Capture result uri:", uri ? `${uri.slice(0, 60)}…` : "null");
+      if (!uri) throw new Error("Could not capture card image");
+      const asset = await MediaLibrary.createAssetAsync(ensureFileUri(uri));
+      await MediaLibrary.createAlbumAsync("SmartWave", asset, true);
+      if (__DEV__) console.log("[ViewShot] Saved to gallery and SmartWave album");
+      Alert.alert("Success", "Card saved to your photos (Recent and SmartWave album).");
+    } catch (e) {
+      const err = e as Error & { message?: string; stack?: string };
+      const msg = err?.message ?? String(e);
+      if (__DEV__) {
+        console.error("[ViewShot] Error saving with view-shot:", msg);
+        console.error("[ViewShot] Full error:", e);
+        if (err?.stack) console.error("[ViewShot] Stack:", err.stack);
+        if (msg.includes("snapshot view tag")) {
+          console.warn(
+            "[ViewShot] Snapshot failed: often caused by offscreen/opacity:0 view, remote Images, or Android New Architecture. Prefer \"Save Card\" (Skia) or \"Share\"."
+          );
+        }
+      }
+      Alert.alert("Error", "Failed to save card with view-shot. You can use \"Save Card\" or \"Share\" instead.");
+    } finally {
+      setSaving(false);
+      setQrUriForViewShot(null);
     }
   };
 
@@ -385,6 +496,9 @@ export default function DigitalCardScreen() {
                   <View style={styles.qrWrapper}>
                     {vCardData ? (
                       <QRCode
+                        getRef={(c) => {
+                          qrSvgRef.current = c;
+                        }}
                         value={vCardData}
                         size={120}
                         color="#000000"
@@ -394,7 +508,7 @@ export default function DigitalCardScreen() {
                         logoBackgroundColor="#FFFFFF"
                         logoMargin={2}
                         logoBorderRadius={2}
-                        errorCorrectionLevel="H"
+                        ecl="H"
                         onError={(e) => {
                           console.error("QR Code error in card:", e);
                         }}
@@ -412,6 +526,123 @@ export default function DigitalCardScreen() {
             </Animated.View>
           </View>
         </View>
+      </View>
+
+      {/* Offscreen Skia canvases for Save/Share – export card as PNG (photo, logo, QR, full info) */}
+      <View style={{ position: "absolute", opacity: 0, left: 0, top: 0, width: CARD_WIDTH, height: CARD_HEIGHT * 4 }} pointerEvents="none">
+        <View style={{ position: "absolute", left: 0, top: 0, width: CARD_WIDTH, height: CARD_HEIGHT }}>
+          <CardFrontCanvas
+            ref={frontCanvasRef}
+            width={CARD_WIDTH}
+            height={CARD_HEIGHT}
+            profile={profile}
+            theme={theme as ThemeExport}
+          />
+        </View>
+        <View style={{ position: "absolute", left: 0, top: CARD_HEIGHT, width: CARD_WIDTH, height: CARD_HEIGHT }}>
+          <CardBackCanvas
+            ref={backCanvasRef}
+            width={CARD_WIDTH}
+            height={CARD_HEIGHT}
+            profile={profile}
+            theme={theme as ThemeExport}
+            qrBase64={qrBase64ForExport}
+            qrFileUri={qrFileUriForExport}
+          />
+        </View>
+        <View style={{ position: "absolute", left: 0, top: CARD_HEIGHT * 2, width: CARD_WIDTH, height: CARD_HEIGHT * 2 }}>
+          <CombinedCardCanvas
+            ref={combinedCanvasRef}
+            width={CARD_WIDTH}
+            cardHeight={CARD_HEIGHT}
+            profile={profile}
+            theme={theme as ThemeExport}
+            qrBase64={qrBase64ForExport}
+            qrFileUri={qrFileUriForExport}
+          />
+        </View>
+      </View>
+
+      {/* Offscreen view for "Save with View Shot" – positioned off-screen (not opacity:0) so native snapshot may succeed on Android */}
+      <View
+        style={{
+          position: "absolute",
+          left: -9999,
+          top: 0,
+          width: CARD_WIDTH,
+          height: CARD_HEIGHT * 2,
+        }}
+        pointerEvents="none"
+        collapsable={false}
+      >
+        <ViewShot
+          ref={viewShotRef}
+          options={{ format: "png", result: "tmpfile" }}
+          collapsable={false}
+          style={{ width: CARD_WIDTH, height: CARD_HEIGHT * 2 }}
+        >
+          <View style={{ width: CARD_WIDTH, height: CARD_HEIGHT * 2 }}>
+            <View style={[styles.card, theme.front, { width: CARD_WIDTH, height: CARD_HEIGHT }]}>
+              <View style={styles.cardContent}>
+                <View style={styles.cardLeft}>
+                  <Text style={[styles.cardName, theme.text]}>{name}</Text>
+                  {profile.title ? (
+                    <Text style={[styles.cardTitle, theme.textMuted]}>{profile.title}</Text>
+                  ) : null}
+                  {profile.company ? (
+                    <Text style={[styles.cardCompany, theme.text]}>{profile.company}</Text>
+                  ) : null}
+                  {workAddress ? (
+                    <Text style={[styles.cardAddress, theme.textMuted]} numberOfLines={2}>
+                      {workAddress}
+                    </Text>
+                  ) : null}
+                  <View style={styles.cardContact}>
+                    {profile.workEmail ? (
+                      <Text style={[styles.cardContactText, theme.textMuted]} numberOfLines={1}>
+                        {profile.workEmail}
+                      </Text>
+                    ) : null}
+                    {profile.website ? (
+                      <Text style={[styles.cardContactText, theme.textMuted]} numberOfLines={1}>
+                        {profile.website}
+                      </Text>
+                    ) : null}
+                  </View>
+                </View>
+                <View style={styles.cardRight}>
+                  {/* ViewShot fallback: initial only (no remote profile.photo) so snapshot can succeed */}
+                  <View style={[styles.cardPhotoPlaceholder, theme.text]}>
+                    <Text style={[styles.cardPhotoText, theme.text]}>{name.charAt(0).toUpperCase()}</Text>
+                  </View>
+                </View>
+              </View>
+            </View>
+            <View style={[styles.card, styles.cardBack, theme.back, { width: CARD_WIDTH, height: CARD_HEIGHT }]}>
+              <View style={styles.cardBackContent}>
+                <View style={styles.cardBackLeft}>
+                  <Text style={[styles.cardName, { color: "#fff" }]}>{name}</Text>
+                  {/* ViewShot fallback: no remote company logo – placeholder so snapshot can succeed */}
+                  <View style={[styles.cardLogoPlaceholder]}>
+                    <Text style={{ color: "rgba(255,255,255,0.7)", fontSize: 10 }}>{profile.company || "Logo"}</Text>
+                  </View>
+                </View>
+                <View style={styles.cardBackRight}>
+                  {qrUriForViewShot ? (
+                    <View style={styles.qrWrapper}>
+                      <Image source={{ uri: qrUriForViewShot }} style={styles.viewShotQrImage} />
+                    </View>
+                  ) : (
+                    <View style={styles.qrWrapper}>
+                      <Text style={{ color: "#666", fontSize: 12 }}>QR</Text>
+                    </View>
+                  )}
+                  <Text style={[styles.qrLabel, { color: "#fff" }]}>Scan to save contact</Text>
+                </View>
+              </View>
+            </View>
+          </View>
+        </ViewShot>
       </View>
 
       <View style={styles.actions}>
@@ -447,6 +678,15 @@ export default function DigitalCardScreen() {
           disabled={saving}
         >
           <Text style={[styles.downloadButtonTextSecondary, { color: colors.text }]}>Share</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.downloadButton, styles.shareButton, { borderColor: colors.border }]}
+          onPress={saveWithViewShot}
+          disabled={saving}
+        >
+          <Text style={[styles.downloadButtonTextSecondary, { color: colors.text }]}>
+            Save with View Shot
+          </Text>
         </TouchableOpacity>
       </View>
     </ScrollView>
@@ -560,6 +800,15 @@ const styles = StyleSheet.create({
     marginTop: 12,
     borderRadius: 4,
   },
+  cardLogoPlaceholder: {
+    width: 40,
+    height: 40,
+    marginTop: 12,
+    borderRadius: 4,
+    backgroundColor: "rgba(255,255,255,0.2)",
+    justifyContent: "center",
+    alignItems: "center",
+  },
   cardBackRight: {
     alignItems: "center",
     justifyContent: "center",
@@ -583,6 +832,10 @@ const styles = StyleSheet.create({
   qrLabel: {
     fontSize: 10,
     textAlign: "center",
+  },
+  viewShotQrImage: {
+    width: 120,
+    height: 120,
   },
   actions: {
     flexDirection: "row",

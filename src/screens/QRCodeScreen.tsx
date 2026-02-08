@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import {
   View,
   Text,
@@ -20,7 +20,6 @@ import Constants from "expo-constants";
 import * as MediaLibrary from "expo-media-library";
 import * as FileSystem from "expo-file-system/legacy";
 import * as Sharing from "expo-sharing";
-import { captureRef } from "react-native-view-shot";
 
 type QRSize = "small" | "medium" | "large";
 
@@ -33,7 +32,7 @@ export default function QRCodeScreen() {
   const [size, setSize] = useState<QRSize>("medium");
   const [saving, setSaving] = useState(false);
   const [qrError, setQrError] = useState("");
-  const qrRef = React.useRef<View>(null);
+  const qrSvgRef = useRef<{ toDataURL: (callback: (data: string) => void) => void } | null>(null);
 
   useEffect(() => {
     if (__DEV__) {
@@ -76,7 +75,7 @@ export default function QRCodeScreen() {
   };
 
   const downloadQRCode = async () => {
-    if (!qrRef.current || !profile) return;
+    if (!qrSvgRef.current || !profile) return;
 
     // Expo Go on Android cannot save to photos (Expo limitation). Offer Share instead.
     if (Platform.OS === "android" && Constants.appOwnership === "expo") {
@@ -93,9 +92,23 @@ export default function QRCodeScreen() {
 
     try {
       setSaving(true);
-      const uri = await captureRef(qrRef.current, {
-        format: "png",
-        quality: 1.0,
+
+      const filePath = await new Promise<string>((resolve, reject) => {
+        if (!qrSvgRef.current) {
+          reject(new Error("QR code not ready"));
+          return;
+        }
+        qrSvgRef.current.toDataURL((data: string) => {
+          if (!data) {
+            reject(new Error("Failed to generate QR image"));
+            return;
+          }
+          const base64 = data.replace(/(\r\n|\n|\r)/gm, "");
+          const path = `${FileSystem.cacheDirectory ?? ""}smartwave_qr_${Date.now()}.png`;
+          FileSystem.writeAsStringAsync(path, base64, { encoding: "base64" })
+            .then(() => resolve(path))
+            .catch(reject);
+        });
       });
 
       try {
@@ -123,17 +136,16 @@ export default function QRCodeScreen() {
         return;
       }
 
-      let uriToSave = uri;
-      if (Platform.OS === "android") {
-        const cacheDir = FileSystem.cacheDirectory ?? "";
-        const path = `${cacheDir}smartwave_qr_${Date.now()}.png`;
-        await FileSystem.copyAsync({ from: uri, to: path });
-        uriToSave = path;
-      }
       try {
-        const asset = await MediaLibrary.createAssetAsync(uriToSave);
-        await MediaLibrary.createAlbumAsync("SmartWave", asset, false);
-        Alert.alert("Success", "QR code saved to your photos!");
+        const localUri =
+          Platform.OS === "android" && !filePath.startsWith("file://")
+            ? `file://${filePath}`
+            : filePath;
+        // createAssetAsync adds to gallery (visible in Recent)
+        const asset = await MediaLibrary.createAssetAsync(localUri);
+        // Copy into SmartWave album so it appears in Recent and in SmartWave (copyAsset: true)
+        await MediaLibrary.createAlbumAsync("SmartWave", asset, true);
+        Alert.alert("Success", "QR code saved to your photos (Recent and SmartWave album).");
       } catch (saveError) {
         console.error("Save to photos error:", saveError);
         Alert.alert(
@@ -150,29 +162,42 @@ export default function QRCodeScreen() {
   };
 
   const shareQRCode = async () => {
-    if (!qrRef.current || !profile) return;
+    if (!qrSvgRef.current || !profile) return;
 
     try {
       setSaving(true);
-      const uri = await captureRef(qrRef.current, {
-        format: "png",
-        quality: 1.0,
+
+      const filePath = await new Promise<string>((resolve, reject) => {
+        if (!qrSvgRef.current) {
+          reject(new Error("QR code not ready"));
+          return;
+        }
+        qrSvgRef.current.toDataURL((data: string) => {
+          if (!data) {
+            reject(new Error("Failed to generate QR image"));
+            return;
+          }
+          const base64 = data.replace(/(\r\n|\n|\r)/gm, "");
+          const path = `${FileSystem.cacheDirectory ?? ""}smartwave_qr_share_${Date.now()}.png`;
+          FileSystem.writeAsStringAsync(path, base64, { encoding: "base64" })
+            .then(() => resolve(path))
+            .catch(reject);
+        });
       });
-      const cacheDir = FileSystem.cacheDirectory ?? "";
-      const path = `${cacheDir}smartwave_qr_share_${Date.now()}.png`;
-      await FileSystem.copyAsync({ from: uri, to: path });
+
       const isAvailable = await Sharing.isAvailableAsync();
       if (isAvailable) {
-        await Sharing.shareAsync(path, {
+        await Sharing.shareAsync(filePath, {
           mimeType: "image/png",
           dialogTitle: "Share QR code",
         });
       } else {
         const message = `Scan this QR code to add ${profile.name || "contact"} to your contacts`;
-        await Share.share({ url: path, message });
+        await Share.share({ url: filePath, message });
       }
-    } catch (e: any) {
-      if (e?.message && !e.message.includes("User cancelled") && !e.message?.includes("canceled")) {
+    } catch (e: unknown) {
+      const err = e as { message?: string };
+      if (err?.message && !err.message.includes("User cancelled") && !err.message?.includes("canceled")) {
         console.error("Error sharing QR code:", e);
         Alert.alert("Error", "Failed to share QR code. Please try again.");
       }
@@ -227,33 +252,34 @@ export default function QRCodeScreen() {
         Scan to add {profile.name || "contact"} to your contacts
       </Text>
 
-      <View ref={qrRef} collapsable={false}>
-        <View style={[styles.qrContainer, { backgroundColor: "#fff", borderColor: colors.border }]}>
-          {qrError || !vCardData ? (
-            <View style={styles.qrErrorContainer}>
-              <Text style={[styles.qrErrorText, { color: colors.error }]}>
-                {qrError || "Unable to generate QR code. Please ensure your profile has contact information."}
-              </Text>
-            </View>
-          ) : (
-            <QRCode
-              value={vCardData}
-              size={qrSize}
-              color="#000000"
-              backgroundColor="#FFFFFF"
-              logo={profile.companyLogo ? { uri: profile.companyLogo } : undefined}
-              logoSize={qrSize * 0.15}
-              logoBackgroundColor="#FFFFFF"
-              logoMargin={2}
-              logoBorderRadius={4}
-              errorCorrectionLevel="H"
-              onError={(e) => {
-                console.error("QR Code generation error:", e);
-                setQrError("Failed to generate QR code. Please try again.");
-              }}
-            />
-          )}
-        </View>
+      <View style={[styles.qrContainer, { backgroundColor: "#fff", borderColor: colors.border }]}>
+        {qrError || !vCardData ? (
+          <View style={styles.qrErrorContainer}>
+            <Text style={[styles.qrErrorText, { color: colors.error }]}>
+              {qrError || "Unable to generate QR code. Please ensure your profile has contact information."}
+            </Text>
+          </View>
+        ) : (
+          <QRCode
+            getRef={(c) => {
+              qrSvgRef.current = c;
+            }}
+            value={vCardData}
+            size={qrSize}
+            color="#000000"
+            backgroundColor="#FFFFFF"
+            logo={profile.companyLogo ? { uri: profile.companyLogo } : undefined}
+            logoSize={qrSize * 0.15}
+            logoBackgroundColor="#FFFFFF"
+            logoMargin={2}
+            logoBorderRadius={4}
+            ecl="H"
+            onError={(e) => {
+              console.error("QR Code generation error:", e);
+              setQrError("Failed to generate QR code. Please try again.");
+            }}
+          />
+        )}
       </View>
 
       <View style={styles.controls}>
