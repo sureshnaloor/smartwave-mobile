@@ -116,7 +116,23 @@ You have two main options:
 2. Tap **Install** (or the link that says to install the profile and then the app).
 3. You may need to:
    - Go to **Settings → General → VPN & Device Management** and **Trust** the developer certificate for your Apple ID.
+   - **Enable Developer Mode** (see below) if the app says it’s required.
    - Then open the **SmartWave** app from the home screen.
+
+### Enable Developer Mode (required on iOS 16+)
+
+Development builds are signed with a development certificate, so iOS may ask you to turn on **Developer Mode** before the app will run.
+
+1. On your **iPhone**, open **Settings**.
+2. Go to **Privacy & Security** (or **Settings → General**, then scroll to **Developer Mode** on some versions).
+3. Scroll down to **Developer Mode** and turn it **On**.
+4. Confirm when iOS asks to restart the device.
+5. After the phone restarts, tap **Turn On** again when prompted and enter your passcode.
+6. Open the **SmartWave** app again; it should launch.
+
+If you don’t see **Developer Mode**:
+- It appears on **iOS 16 and later**. Update iOS if needed.
+- On some versions it’s under **Settings → General → Developer Mode**.
 
 ### Option B: Download .ipa and use Apple Configurator / Xcode / TestFlight
 

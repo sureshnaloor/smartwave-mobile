@@ -15,6 +15,7 @@ import { useAuth } from "../context/AuthContext";
 import { useTheme } from "../context/ThemeContext";
 import { getProfile, type Profile } from "../api/client";
 import { generateVCardData } from "../utils/vcard";
+import { generateQRBase64 } from "../utils/qrExport";
 import QRCode from "react-native-qrcode-svg";
 import Constants from "expo-constants";
 import * as MediaLibrary from "expo-media-library";
@@ -75,7 +76,7 @@ export default function QRCodeScreen() {
   };
 
   const downloadQRCode = async () => {
-    if (!qrSvgRef.current || !profile) return;
+    if (!profile) return;
 
     // Expo Go on Android cannot save to photos (Expo limitation). Offer Share instead.
     if (Platform.OS === "android" && Constants.appOwnership === "expo") {
@@ -92,24 +93,11 @@ export default function QRCodeScreen() {
 
     try {
       setSaving(true);
-
-      const filePath = await new Promise<string>((resolve, reject) => {
-        if (!qrSvgRef.current) {
-          reject(new Error("QR code not ready"));
-          return;
-        }
-        qrSvgRef.current.toDataURL((data: string) => {
-          if (!data) {
-            reject(new Error("Failed to generate QR image"));
-            return;
-          }
-          const base64 = data.replace(/(\r\n|\n|\r)/gm, "");
-          const path = `${FileSystem.cacheDirectory ?? ""}smartwave_qr_${Date.now()}.png`;
-          FileSystem.writeAsStringAsync(path, base64, { encoding: "base64" })
-            .then(() => resolve(path))
-            .catch(reject);
-        });
-      });
+      const vCardData = generateVCardData(profile);
+      const base64 = await generateQRBase64(vCardData, 300);
+      const path = `${FileSystem.cacheDirectory ?? ""}smartwave_qr_${Date.now()}.png`;
+      await FileSystem.writeAsStringAsync(path, base64, { encoding: "base64" });
+      const filePath = path;
 
       try {
         const { status } = await MediaLibrary.requestPermissionsAsync();
@@ -162,28 +150,15 @@ export default function QRCodeScreen() {
   };
 
   const shareQRCode = async () => {
-    if (!qrSvgRef.current || !profile) return;
+    if (!profile) return;
 
     try {
       setSaving(true);
-
-      const filePath = await new Promise<string>((resolve, reject) => {
-        if (!qrSvgRef.current) {
-          reject(new Error("QR code not ready"));
-          return;
-        }
-        qrSvgRef.current.toDataURL((data: string) => {
-          if (!data) {
-            reject(new Error("Failed to generate QR image"));
-            return;
-          }
-          const base64 = data.replace(/(\r\n|\n|\r)/gm, "");
-          const path = `${FileSystem.cacheDirectory ?? ""}smartwave_qr_share_${Date.now()}.png`;
-          FileSystem.writeAsStringAsync(path, base64, { encoding: "base64" })
-            .then(() => resolve(path))
-            .catch(reject);
-        });
-      });
+      const vCardData = generateVCardData(profile);
+      const base64 = await generateQRBase64(vCardData, 300);
+      const path = `${FileSystem.cacheDirectory ?? ""}smartwave_qr_share_${Date.now()}.png`;
+      await FileSystem.writeAsStringAsync(path, base64, { encoding: "base64" });
+      const filePath = path;
 
       const isAvailable = await Sharing.isAvailableAsync();
       if (isAvailable) {

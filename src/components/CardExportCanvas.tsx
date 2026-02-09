@@ -151,13 +151,23 @@ export const CardBackCanvas = React.forwardRef<
   const qrSrc = qrFileUri || (qrBase64 ? `data:image/png;base64,${qrBase64}` : null);
   const qrImage = useImage(qrSrc);
   const logoImage = useImage(profile.companyLogo || null);
-  const qrX = (width - QR_SIZE) / 2;
-  const qrY = height / 2 - QR_SIZE / 2 - 8;
+  
+  // Match visible card layout: left side (name + logo), right side (QR centered vertically)
+  // Visible card: cardBackLeft (flex: 1, paddingRight: 12), cardBackRight (QR wrapper 120x120)
+  // QR wrapper has padding: 8, borderRadius: 8, width/height: 120
+  // Position QR on right side, accounting for left section taking ~60% of width (flex: 1)
+  const LEFT_SECTION_WIDTH = width * 0.6; // Approximate left section width (flex: 1)
+  const QR_WRAPPER_SIZE = QR_SIZE + 16; // 120 + 16 (8px padding each side)
+  const QR_WRAPPER_X = LEFT_SECTION_WIDTH + 12; // Start after left section + paddingRight (12px)
+  const qrX = QR_WRAPPER_X + 8; // QR image inside wrapper (8px padding)
+  const qrY = (height - QR_SIZE) / 2; // Vertically centered
+  const qrLabelY = qrY + QR_SIZE + 8; // Label below QR (8px margin like visible card)
 
   return (
     <Canvas ref={ref} style={{ width, height }}>
       <Fill color={theme.back.backgroundColor} />
       <RoundedRect x={0} y={0} width={width} height={height} r={CARD_R} color={theme.back.backgroundColor} />
+      {/* Left side: name + logo */}
       <Text x={PAD} y={PAD + 22} text={truncate(name, 24)} font={fontName} color="#fff" />
       {logoImage && (
         <RoundedRect
@@ -179,13 +189,14 @@ export const CardBackCanvas = React.forwardRef<
           fit="contain"
         />
       )}
+      {/* Right side: QR code (white background wrapper + QR image) */}
       {qrImage && (
         <RoundedRect
-          x={qrX - 8}
+          x={QR_WRAPPER_X}
           y={qrY - 8}
-          width={QR_SIZE + 16}
-          height={QR_SIZE + 16}
-          r={10}
+          width={QR_WRAPPER_SIZE}
+          height={QR_WRAPPER_SIZE}
+          r={8}
           color="#fff"
         />
       )}
@@ -199,9 +210,10 @@ export const CardBackCanvas = React.forwardRef<
           fit="contain"
         />
       )}
+      {/* Label below QR, centered under QR wrapper */}
       <Text
-        x={width / 2 - 58}
-        y={height - PAD - 18}
+        x={QR_WRAPPER_X + QR_WRAPPER_SIZE / 2 - 58}
+        y={qrLabelY}
         text="Scan to save contact"
         font={fontLabel}
         color="rgba(255,255,255,0.95)"
@@ -240,8 +252,13 @@ export const CombinedCardCanvas = React.forwardRef<
   const qrSrc = qrFileUri || (qrBase64 ? `data:image/png;base64,${qrBase64}` : null);
   const qrImage = useImage(qrSrc);
   const height = cardHeight * 2;
-  const qrX = (width - QR_SIZE) / 2;
-  const backQrY = cardHeight + cardHeight / 2 - QR_SIZE / 2 - 8;
+  // Match CardBackCanvas layout: QR on right side
+  const LEFT_SECTION_WIDTH = width * 0.6;
+  const QR_WRAPPER_SIZE = QR_SIZE + 16;
+  const QR_WRAPPER_X = LEFT_SECTION_WIDTH + 12;
+  const qrX = QR_WRAPPER_X + 8;
+  const backQrY = cardHeight + (cardHeight - QR_SIZE) / 2;
+  const backQrLabelY = backQrY + QR_SIZE + 8;
 
   return (
     <Canvas ref={ref} style={{ width, height }}>
@@ -310,13 +327,13 @@ export const CombinedCardCanvas = React.forwardRef<
       )}
       {qrImage && (
         <>
-          <RoundedRect x={qrX - 8} y={backQrY - 8} width={QR_SIZE + 16} height={QR_SIZE + 16} r={10} color="#fff" />
+          <RoundedRect x={QR_WRAPPER_X} y={backQrY - 8} width={QR_WRAPPER_SIZE} height={QR_WRAPPER_SIZE} r={8} color="#fff" />
           <Image image={qrImage} x={qrX} y={backQrY} width={QR_SIZE} height={QR_SIZE} fit="contain" />
         </>
       )}
       <Text
-        x={width / 2 - 58}
-        y={height - PAD - 18}
+        x={QR_WRAPPER_X + QR_WRAPPER_SIZE / 2 - 58}
+        y={backQrLabelY}
         text="Scan to save contact"
         font={fontLabel}
         color="rgba(255,255,255,0.95)"

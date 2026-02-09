@@ -18,6 +18,7 @@ import { useAuth } from "../context/AuthContext";
 import { useTheme } from "../context/ThemeContext";
 import { getProfile, type Profile } from "../api/client";
 import { generateVCardData } from "../utils/vcard";
+import { generateQRBase64 } from "../utils/qrExport";
 import QRCode from "react-native-qrcode-svg";
 import Constants from "expo-constants";
 import { CardFrontCanvas, CardBackCanvas, CombinedCardCanvas, type ThemeExport } from "../components/CardExportCanvas";
@@ -25,25 +26,6 @@ import ViewShot from "react-native-view-shot";
 import * as MediaLibrary from "expo-media-library";
 import * as FileSystem from "expo-file-system/legacy";
 import * as Sharing from "expo-sharing";
-
-/** Get QR as base64 (same strategy as QRCodeScreen – no view-shot on SVG). */
-function getQRBase64(
-  qrRef: React.RefObject<{ toDataURL: (cb: (data: string) => void) => void } | null>
-): Promise<string> {
-  return new Promise((resolve, reject) => {
-    if (!qrRef.current) {
-      reject(new Error("QR not ready"));
-      return;
-    }
-    qrRef.current.toDataURL((data: string) => {
-      if (!data) {
-        reject(new Error("Failed to generate QR image"));
-        return;
-      }
-      resolve(data.replace(/(\r\n|\n|\r)/gm, ""));
-    });
-  });
-}
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 const CARD_WIDTH = SCREEN_WIDTH - 48;
@@ -177,7 +159,8 @@ export default function DigitalCardScreen() {
         return;
       }
 
-      const qrBase64 = await getQRBase64(qrSvgRef);
+      const vCardData = generateVCardData(profile);
+      const qrBase64 = await generateQRBase64(vCardData, 200);
       setQrBase64ForExport(qrBase64);
       if (Platform.OS === "android") {
         const cacheDir = FileSystem.cacheDirectory ?? "";
@@ -219,7 +202,8 @@ export default function DigitalCardScreen() {
 
     try {
       setSaving(true);
-      const qrBase64 = await getQRBase64(qrSvgRef);
+      const vCardData = generateVCardData(profile);
+      const qrBase64 = await generateQRBase64(vCardData, 200);
       setQrBase64ForExport(qrBase64);
       if (Platform.OS === "android") {
         const cacheDir = FileSystem.cacheDirectory ?? "";
@@ -292,7 +276,8 @@ export default function DigitalCardScreen() {
       }
       if (__DEV__) console.log("[ViewShot] Permission granted, getting QR base64…");
 
-      const qrBase64 = await getQRBase64(qrSvgRef);
+      const vCardData = generateVCardData(profile);
+      const qrBase64 = await generateQRBase64(vCardData, 200);
       if (__DEV__) console.log("[ViewShot] QR base64 length:", qrBase64?.length ?? 0);
 
       // Use data URI only (no file://) so ViewShot view has no remote/file images – improves snapshot success on Android
