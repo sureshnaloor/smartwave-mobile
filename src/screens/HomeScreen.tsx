@@ -43,33 +43,67 @@ export default function HomeScreen({ onEdit, navigation }: Props) {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const lastFetchedTokenRef = React.useRef<string | null>(null);
+  const lastCanEditRef = React.useRef<boolean | null>(null);
 
   useEffect(() => {
     if (!token) {
       setLoading(false);
       setError("Not authenticated. Please sign in.");
+      setProfile(null);
+      lastFetchedTokenRef.current = null;
       return;
     }
     
+    // Prevent duplicate fetches for the same token
+    if (lastFetchedTokenRef.current === token) {
+      // Already fetching or fetched this token - skip
+      return;
+    }
+    
+    lastFetchedTokenRef.current = token;
+    let cancelled = false;
     setLoading(true);
     setError("");
     
     getProfile(token)
       .then((p) => {
-        setProfile(p);
-        setCanEditProfile(!p?.createdByAdminId);
-        setError("");
-      })
-      .catch((e) => {
-        const msg = e instanceof Error ? e.message : "Failed to load profile";
-        setError(msg);
-        // If unauthorized, clear profile to trigger sign-in
-        if (msg.includes("Unauthorized") || msg.includes("invalid") || msg.includes("expired")) {
-          setProfile(null);
+        // Double-check token hasn't changed and request wasn't cancelled
+        if (!cancelled && lastFetchedTokenRef.current === token) {
+          setProfile(p);
+          // Only update if value actually changed to prevent unnecessary re-renders
+          const newCanEdit = !p?.createdByAdminId;
+          if (lastCanEditRef.current !== newCanEdit) {
+            setCanEditProfile(newCanEdit);
+            lastCanEditRef.current = newCanEdit;
+          }
+          setError("");
         }
       })
-      .finally(() => setLoading(false));
-  }, [token, setCanEditProfile]);
+      .catch((e) => {
+        // Double-check token hasn't changed and request wasn't cancelled
+        if (!cancelled && lastFetchedTokenRef.current === token) {
+          const msg = e instanceof Error ? e.message : "Failed to load profile";
+          setError(msg);
+          // If unauthorized, clear profile to trigger sign-in
+          if (msg.includes("Unauthorized") || msg.includes("invalid") || msg.includes("expired")) {
+            setProfile(null);
+            lastFetchedTokenRef.current = null;
+          }
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setLoading(false);
+        }
+      });
+    
+    return () => {
+      cancelled = true;
+      // Only reset ref if token actually changed (not just unmount)
+      // This allows the ref to persist across re-renders for the same token
+    };
+  }, [token]); // Only depend on token - ref prevents duplicate fetches
 
   if (loading) {
     return (

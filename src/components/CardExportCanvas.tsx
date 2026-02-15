@@ -1,20 +1,41 @@
 /**
  * Renders the digital card to Skia canvases for export as PNG.
  * Includes photo, logo, QR, modern fonts, and full info. Share = one image (front+back stacked).
+ * 
+ * NOTE: Skia is only available on native platforms. On web, these components are stubs.
  */
 import React from "react";
 import { Platform } from "react-native";
-import {
-  Canvas,
-  Fill,
-  RoundedRect,
-  Text,
-  Image,
-  Group,
-  useImage,
-  matchFont,
-} from "@shopify/react-native-skia";
 import type { Profile } from "../api/client";
+
+// Skia is only available on native platforms
+const isWeb = Platform.OS === "web";
+
+// Conditional Skia imports - only on native
+let Canvas: any;
+let Fill: any;
+let RoundedRect: any;
+let Text: any;
+let Image: any;
+let Group: any;
+let useImage: any;
+let matchFont: any;
+
+if (!isWeb) {
+  try {
+    const skia = require("@shopify/react-native-skia");
+    Canvas = skia.Canvas;
+    Fill = skia.Fill;
+    RoundedRect = skia.RoundedRect;
+    Text = skia.Text;
+    Image = skia.Image;
+    Group = skia.Group;
+    useImage = skia.useImage;
+    matchFont = skia.matchFont;
+  } catch (e) {
+    console.warn("[CardExportCanvas] Skia not available:", e);
+  }
+}
 
 export type ThemeExport = {
   front: { backgroundColor: string };
@@ -30,11 +51,12 @@ const LOGO_SIZE = 40;
 const QR_SIZE = 120;
 
 const fontFamily = Platform.select({ ios: "Helvetica Neue", default: "sans-serif-medium" });
-const fontName = matchFont({ fontFamily, fontSize: 20, fontWeight: "700" });
-const fontSub = matchFont({ fontFamily, fontSize: 13, fontStyle: "italic" });
-const fontBody = matchFont({ fontFamily, fontSize: 13, fontWeight: "500" });
-const fontSmall = matchFont({ fontFamily, fontSize: 11, fontWeight: "400" });
-const fontLabel = matchFont({ fontFamily, fontSize: 10, fontWeight: "500" });
+// Only create fonts on native (Skia available)
+const fontName = !isWeb && matchFont ? matchFont({ fontFamily, fontSize: 20, fontWeight: "700" }) : null;
+const fontSub = !isWeb && matchFont ? matchFont({ fontFamily, fontSize: 13, fontStyle: "italic" }) : null;
+const fontBody = !isWeb && matchFont ? matchFont({ fontFamily, fontSize: 13, fontWeight: "500" }) : null;
+const fontSmall = !isWeb && matchFont ? matchFont({ fontFamily, fontSize: 11, fontWeight: "400" }) : null;
+const fontLabel = !isWeb && matchFont ? matchFont({ fontFamily, fontSize: 10, fontWeight: "500" }) : null;
 
 function truncate(str: string, max: number) {
   if (str.length <= max) return str;
@@ -52,6 +74,15 @@ export const CardFrontCanvas = React.forwardRef<
   { makeImageSnapshotAsync: () => Promise<{ encodeToBase64: () => string }> },
   CardFrontCanvasProps
 >(function CardFrontCanvas({ width, height, profile, theme }, ref) {
+  // Web fallback: return a stub component
+  if (isWeb || !Canvas) {
+    React.useImperativeHandle(ref, () => ({
+      makeImageSnapshotAsync: async () => ({
+        encodeToBase64: () => "",
+      }),
+    }));
+    return null;
+  }
   const name =
     [profile.firstName, profile.lastName].filter(Boolean).join(" ") || profile.name || "";
   const workAddress = [
@@ -64,7 +95,7 @@ export const CardFrontCanvas = React.forwardRef<
     .filter(Boolean)
     .join(", ");
   const initial = name.charAt(0).toUpperCase();
-  const photoImage = useImage(profile.photo || null);
+  const photoImage = useImage ? useImage(profile.photo || null) : null;
   let yName = PAD + 22;
   let yTitle = yName + 26;
   let yCompany = yTitle + (profile.title ? 18 : 0);
@@ -146,11 +177,20 @@ export const CardBackCanvas = React.forwardRef<
   { makeImageSnapshotAsync: () => Promise<{ encodeToBase64: () => string }> },
   CardBackCanvasProps
 >(function CardBackCanvas({ width, height, profile, theme, qrBase64, qrFileUri }, ref) {
+  // Web fallback: return a stub component
+  if (isWeb || !Canvas) {
+    React.useImperativeHandle(ref, () => ({
+      makeImageSnapshotAsync: async () => ({
+        encodeToBase64: () => "",
+      }),
+    }));
+    return null;
+  }
   const name =
     [profile.firstName, profile.lastName].filter(Boolean).join(" ") || profile.name || "";
   const qrSrc = qrFileUri || (qrBase64 ? `data:image/png;base64,${qrBase64}` : null);
-  const qrImage = useImage(qrSrc);
-  const logoImage = useImage(profile.companyLogo || null);
+  const qrImage = useImage ? useImage(qrSrc) : null;
+  const logoImage = useImage ? useImage(profile.companyLogo || null) : null;
   
   // Match visible card layout: left side (name + logo), right side (QR centered vertically)
   // Visible card: cardBackLeft (flex: 1, paddingRight: 12), cardBackRight (QR wrapper 120x120)
@@ -235,6 +275,15 @@ export const CombinedCardCanvas = React.forwardRef<
   { makeImageSnapshotAsync: () => Promise<{ encodeToBase64: () => string }> },
   CombinedCardCanvasProps
 >(function CombinedCardCanvas({ width, cardHeight, profile, theme, qrBase64, qrFileUri }, ref) {
+  // Web fallback: return a stub component
+  if (isWeb || !Canvas) {
+    React.useImperativeHandle(ref, () => ({
+      makeImageSnapshotAsync: async () => ({
+        encodeToBase64: () => "",
+      }),
+    }));
+    return null;
+  }
   const name =
     [profile.firstName, profile.lastName].filter(Boolean).join(" ") || profile.name || "";
   const workAddress = [
@@ -247,10 +296,10 @@ export const CombinedCardCanvas = React.forwardRef<
     .filter(Boolean)
     .join(", ");
   const initial = name.charAt(0).toUpperCase();
-  const photoImage = useImage(profile.photo || null);
-  const logoImage = useImage(profile.companyLogo || null);
+  const photoImage = useImage ? useImage(profile.photo || null) : null;
+  const logoImage = useImage ? useImage(profile.companyLogo || null) : null;
   const qrSrc = qrFileUri || (qrBase64 ? `data:image/png;base64,${qrBase64}` : null);
-  const qrImage = useImage(qrSrc);
+  const qrImage = useImage ? useImage(qrSrc) : null;
   const height = cardHeight * 2;
   // Match CardBackCanvas layout: QR on right side
   const LEFT_SECTION_WIDTH = width * 0.6;

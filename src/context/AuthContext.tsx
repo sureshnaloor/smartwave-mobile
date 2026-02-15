@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useEffect, useState } from "react";
-import * as SecureStore from "expo-secure-store";
 import { login as apiLogin, loginWithGoogle as apiLoginWithGoogle, loginWithApple as apiLoginWithApple, getProfile } from "../api/client";
+import { storage } from "../utils/storage";
 
 const TOKEN_KEY = "smartwave_token";
 
@@ -24,18 +24,33 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [token, setTokenState] = useState<string | null>(null);
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
+  const isInitializingRef = React.useRef(false);
+  const lastValidatedTokenRef = React.useRef<string | null>(null);
 
   useEffect(() => {
+    // Prevent multiple validation runs
+    if (isInitializingRef.current) return;
+    
     let cancelled = false;
+    isInitializingRef.current = true;
     
     async function loadAndValidateToken() {
       try {
-        const storedToken = await SecureStore.getItemAsync(TOKEN_KEY);
+        const storedToken = await storage.getItemAsync(TOKEN_KEY);
         
         if (!storedToken) {
           if (!cancelled) {
             setTokenState(null);
             setUser(null);
+            setLoading(false);
+            lastValidatedTokenRef.current = null;
+          }
+          return;
+        }
+
+        // Skip if we already validated this exact token
+        if (lastValidatedTokenRef.current === storedToken) {
+          if (!cancelled) {
             setLoading(false);
           }
           return;
@@ -53,6 +68,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
               image: profile.photo ?? null,
             });
             setLoading(false);
+            lastValidatedTokenRef.current = storedToken;
           }
         } catch (e) {
           // Token is invalid, expired, or network error
@@ -60,11 +76,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           
           // Clear token if unauthorized or invalid
           if (msg.includes("Unauthorized") || msg.includes("invalid") || msg.includes("expired") || msg.includes("missing")) {
-            await SecureStore.deleteItemAsync(TOKEN_KEY);
+            await storage.deleteItemAsync(TOKEN_KEY);
             if (!cancelled) {
               setTokenState(null);
               setUser(null);
               setLoading(false);
+              lastValidatedTokenRef.current = null;
             }
           } else {
             // Network error - keep token but don't set user
@@ -73,6 +90,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
               setTokenState(storedToken);
               setUser(null);
               setLoading(false);
+              // Don't set lastValidatedTokenRef on network error - allow retry
             }
           }
         }
@@ -82,6 +100,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           setTokenState(null);
           setUser(null);
           setLoading(false);
+          lastValidatedTokenRef.current = null;
+        }
+      } finally {
+        if (!cancelled) {
+          isInitializingRef.current = false;
         }
       }
     }
@@ -90,6 +113,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     return () => {
       cancelled = true;
+      isInitializingRef.current = false;
     };
   }, []);
 
@@ -100,27 +124,27 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const signIn = async (email: string, password: string) => {
     const { token: newToken, user: u } = await apiLogin(email, password);
-    await SecureStore.setItemAsync(TOKEN_KEY, newToken);
+    await storage.setItemAsync(TOKEN_KEY, newToken);
     setTokenState(newToken);
     setUser(u);
   };
 
   const signInWithGoogle = async (code: string, redirectUri: string) => {
     const { token: newToken, user: u } = await apiLoginWithGoogle({ code, redirectUri });
-    await SecureStore.setItemAsync(TOKEN_KEY, newToken);
+    await storage.setItemAsync(TOKEN_KEY, newToken);
     setTokenState(newToken);
     setUser(u);
   };
 
   const signInWithApple = async (identityToken: string) => {
     const { token: newToken, user: u } = await apiLoginWithApple(identityToken);
-    await SecureStore.setItemAsync(TOKEN_KEY, newToken);
+    await storage.setItemAsync(TOKEN_KEY, newToken);
     setTokenState(newToken);
     setUser(u);
   };
 
   const completeSignInWithToken = async (token: string) => {
-    await SecureStore.setItemAsync(TOKEN_KEY, token);
+    await storage.setItemAsync(TOKEN_KEY, token);
     setTokenState(token);
     try {
       const profile = await getProfile(token);
@@ -135,7 +159,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const isInvalidToken =
         msg.includes("Unauthorized") || msg.includes("missing") || msg.includes("invalid") || msg.includes("expired");
       if (isInvalidToken) {
-        await SecureStore.deleteItemAsync(TOKEN_KEY);
+        await storage.deleteItemAsync(TOKEN_KEY);
         setTokenState(null);
         setUser(null);
       } else {
@@ -159,9 +183,26 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const signOut = async () => {
-    await SecureStore.deleteItemAsync(TOKEN_KEY);
-    setTokenState(null);
-    setUser(null);
+    try {
+      // Clear state first to prevent any components from making requests
+      setTokenState(null);
+      setUser(null);
+      lastValidatedTokenRef.current = null;
+      isInitializingRef.current = false;
+      // Then clear storage
+      await storage.deleteItemAsync(TOKEN_KEY);
+    } catch (e) {
+      console.error("[AuthContext] Error signing out:", e);
+      // State already cleared above, just ensure storage is cleared
+      try {
+        await storage.deleteItemAsync(TOKEN_KEY);
+      } catch {
+        // Ignore storage errors
+      }
+      // Reset refs
+      lastValidatedTokenRef.current = null;
+      isInitializingRef.current = false;
+    }
   };
 
   return (

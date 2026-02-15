@@ -20,12 +20,33 @@ export default function EmployeeHomeScreen({ navigation }: Props) {
     if (!token) {
       setLoading(false);
       setError("Not authenticated. Please sign in again.");
+      setProfile(null);
       return;
     }
+    
+    let cancelled = false;
+    setLoading(true);
+    
     getProfile(token)
-      .then((p) => setProfile(p))
-      .catch((e) => setError(e instanceof Error ? e.message : "Failed to load profile"))
-      .finally(() => setLoading(false));
+      .then((p) => {
+        if (!cancelled) {
+          setProfile(p);
+        }
+      })
+      .catch((e) => {
+        if (!cancelled) {
+          setError(e instanceof Error ? e.message : "Failed to load profile");
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setLoading(false);
+        }
+      });
+    
+    return () => {
+      cancelled = true;
+    };
   }, [token]);
 
   const openUrl = (url: string) => {

@@ -35,20 +35,41 @@ export default function ProfileScreen() {
   const [workPhone, setWorkPhone] = useState("");
 
   useEffect(() => {
-    if (!token) return;
+    if (!token) {
+      setLoading(false);
+      return;
+    }
+    
+    let cancelled = false;
+    setLoading(true);
+    
     getProfile(token)
       .then((p) => {
-        setProfile(p);
-        setFirstName(p.firstName ?? "");
-        setLastName(p.lastName ?? "");
-        setTitle(p.title ?? "");
-        setCompany(p.company ?? "");
-        setWorkEmail(p.workEmail ?? "");
-        setMobile(p.mobile ?? "");
-        setWorkPhone(p.workPhone ?? "");
+        if (!cancelled) {
+          setProfile(p);
+          setFirstName(p.firstName ?? "");
+          setLastName(p.lastName ?? "");
+          setTitle(p.title ?? "");
+          setCompany(p.company ?? "");
+          setWorkEmail(p.workEmail ?? "");
+          setMobile(p.mobile ?? "");
+          setWorkPhone(p.workPhone ?? "");
+        }
       })
-      .catch((e) => setError(e instanceof Error ? e.message : "Failed to load"))
-      .finally(() => setLoading(false));
+      .catch((e) => {
+        if (!cancelled) {
+          setError(e instanceof Error ? e.message : "Failed to load");
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setLoading(false);
+        }
+      });
+    
+    return () => {
+      cancelled = true;
+    };
   }, [token]);
 
   const applyDirty = () => {

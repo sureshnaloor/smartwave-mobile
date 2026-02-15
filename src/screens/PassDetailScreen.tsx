@@ -138,6 +138,7 @@ export default function PassDetailScreen({ route, navigation }: Props) {
   const isApproved = membershipStatus === "approved";
   const isPending = membershipStatus === "pending";
   const canRequest = !membershipStatus;
+  const isDraft = pass.status === "draft";
 
   return (
     <ScrollView style={[styles.container, { backgroundColor: colors.background }]}>
@@ -145,10 +146,17 @@ export default function PassDetailScreen({ route, navigation }: Props) {
         {/* Header */}
         <View style={[styles.headerCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
           <Text style={[styles.passName, { color: colors.text }]}>{pass.name}</Text>
-          <View style={styles.typeBadge}>
-            <Text style={[styles.typeText, { color: colors.primary }]}>
-              {pass.type === "event" ? "Event Pass" : "Access Pass"}
-            </Text>
+          <View style={styles.headerBadges}>
+            {isDraft && (
+              <View style={[styles.draftHeaderBadge, { backgroundColor: "#EF444420", borderColor: "#EF4444" }]}>
+                <Text style={[styles.draftHeaderBadgeText, { color: "#EF4444" }]}>DRAFT</Text>
+              </View>
+            )}
+            <View style={styles.typeBadge}>
+              <Text style={[styles.typeText, { color: colors.primary }]}>
+                {pass.type === "event" ? "Event Pass" : "Access Pass"}
+              </Text>
+            </View>
           </View>
         </View>
 
@@ -281,23 +289,33 @@ export default function PassDetailScreen({ route, navigation }: Props) {
               <Text style={[styles.sectionTitle, { color: colors.text, marginTop: 24, marginBottom: 12 }]}>
                 Add to Wallet
               </Text>
-              {Platform.OS === "ios" && (
-                <TouchableOpacity
-                  style={[styles.walletButton, { backgroundColor: "#000" }]}
-                  onPress={() => handleAddToWallet("apple")}
-                >
-                  <Text style={styles.walletButtonText}>Add to Apple Wallet</Text>
-                </TouchableOpacity>
+              {isDraft ? (
+                <View style={[styles.draftBanner, { backgroundColor: "#EF444420", borderColor: "#EF4444" }]}>
+                  <Text style={[styles.draftBannerText, { color: "#EF4444" }]}>
+                    Pass is in draft mode. Wallet options will be available once it is active.
+                  </Text>
+                </View>
+              ) : (
+                <>
+                  {Platform.OS === "ios" && (
+                    <TouchableOpacity
+                      style={[styles.walletButton, { backgroundColor: "#000" }]}
+                      onPress={() => handleAddToWallet("apple")}
+                    >
+                      <Text style={styles.walletButtonText}>Add to Apple Wallet</Text>
+                    </TouchableOpacity>
+                  )}
+                  <TouchableOpacity
+                    style={[
+                      styles.walletButton,
+                      { backgroundColor: "#4285F4", marginTop: Platform.OS === "ios" ? 12 : 0 },
+                    ]}
+                    onPress={() => handleAddToWallet("google")}
+                  >
+                    <Text style={styles.walletButtonText}>Save to Google Wallet</Text>
+                  </TouchableOpacity>
+                </>
               )}
-              <TouchableOpacity
-                style={[
-                  styles.walletButton,
-                  { backgroundColor: "#4285F4", marginTop: Platform.OS === "ios" ? 12 : 0 },
-                ]}
-                onPress={() => handleAddToWallet("google")}
-              >
-                <Text style={styles.walletButtonText}>Save to Google Wallet</Text>
-              </TouchableOpacity>
             </>
           )}
         </View>
@@ -325,10 +343,37 @@ const styles = StyleSheet.create({
     marginBottom: 16,
     borderWidth: 1,
   },
+  draftBanner: {
+    padding: 16,
+    borderRadius: 12,
+    borderWidth: 2,
+    marginBottom: 16,
+  },
+  draftBannerText: {
+    fontSize: 14,
+    fontWeight: "600",
+    textAlign: "center",
+  },
   passName: {
     fontSize: 24,
     fontWeight: "700",
     marginBottom: 8,
+  },
+  headerBadges: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    flexWrap: "wrap",
+  },
+  draftHeaderBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+    borderWidth: 1,
+  },
+  draftHeaderBadgeText: {
+    fontSize: 12,
+    fontWeight: "700",
   },
   typeBadge: {
     alignSelf: "flex-start",

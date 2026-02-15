@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect } from "react";
+import React, { createContext, useContext, useState, useEffect, useCallback, useMemo } from "react";
 import { useAuth } from "./AuthContext";
 
 type ProfilePermissionsContextType = {
@@ -9,13 +9,26 @@ type ProfilePermissionsContextType = {
 const ProfilePermissionsContext = createContext<ProfilePermissionsContextType | null>(null);
 
 export function ProfilePermissionsProvider({ children }: { children: React.ReactNode }) {
-  const [canEditProfile, setCanEditProfile] = useState(true);
+  const [canEditProfile, setCanEditProfileState] = useState(true);
   const { token } = useAuth();
+  
+  // Memoize setCanEditProfile to prevent unnecessary re-renders
+  const setCanEditProfile = useCallback((value: boolean) => {
+    setCanEditProfileState(value);
+  }, []);
+  
   useEffect(() => {
-    if (!token) setCanEditProfile(true);
+    if (!token) setCanEditProfileState(true);
   }, [token]);
+  
+  // Memoize context value to prevent unnecessary re-renders
+  const contextValue = useMemo(() => ({
+    canEditProfile,
+    setCanEditProfile,
+  }), [canEditProfile, setCanEditProfile]);
+  
   return (
-    <ProfilePermissionsContext.Provider value={{ canEditProfile, setCanEditProfile }}>
+    <ProfilePermissionsContext.Provider value={contextValue}>
       {children}
     </ProfilePermissionsContext.Provider>
   );

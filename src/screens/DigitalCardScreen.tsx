@@ -85,23 +85,41 @@ export default function DigitalCardScreen() {
     if (!token) {
       setLoading(false);
       setError("Not authenticated. Please sign in.");
+      setProfile(null);
       return;
     }
+    
+    let cancelled = false;
+    setLoading(true);
+    
     if (__DEV__) {
       console.log("[DigitalCardScreen] Loading profile...");
     }
+    
     getProfile(token)
       .then((p) => {
-        if (__DEV__) {
-          console.log("[DigitalCardScreen] Profile loaded:", p?.name);
+        if (!cancelled) {
+          if (__DEV__) {
+            console.log("[DigitalCardScreen] Profile loaded:", p?.name);
+          }
+          setProfile(p);
         }
-        setProfile(p);
       })
       .catch((e) => {
-        console.error("[DigitalCardScreen] Error loading profile:", e);
-        setError(e instanceof Error ? e.message : "Failed to load profile");
+        if (!cancelled) {
+          console.error("[DigitalCardScreen] Error loading profile:", e);
+          setError(e instanceof Error ? e.message : "Failed to load profile");
+        }
       })
-      .finally(() => setLoading(false));
+      .finally(() => {
+        if (!cancelled) {
+          setLoading(false);
+        }
+      });
+    
+    return () => {
+      cancelled = true;
+    };
   }, [token]);
 
   const flipCard = () => {

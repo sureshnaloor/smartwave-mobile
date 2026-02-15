@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useEffect, useState } from "react";
-import * as SecureStore from "expo-secure-store";
+import { storage } from "../utils/storage";
 
 const THEME_KEY = "smartwave_theme";
 const FONT_SCALE_KEY = "smartwave_font_scale";
@@ -59,8 +59,8 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     (async () => {
       try {
         const [savedTheme, savedFont] = await Promise.all([
-          SecureStore.getItemAsync(THEME_KEY),
-          SecureStore.getItemAsync(FONT_SCALE_KEY),
+          storage.getItemAsync(THEME_KEY),
+          storage.getItemAsync(FONT_SCALE_KEY),
         ]);
         if (savedTheme === "light" || savedTheme === "dark") setThemeState(savedTheme);
         if (savedFont === "small" || savedFont === "default" || savedFont === "large") setFontScaleKeyState(savedFont);
@@ -70,12 +70,12 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
 
   const setTheme = (t: Theme) => {
     setThemeState(t);
-    SecureStore.setItemAsync(THEME_KEY, t);
+    storage.setItemAsync(THEME_KEY, t);
   };
 
   const setFontScaleKey = (k: FontScaleKey) => {
     setFontScaleKeyState(k);
-    SecureStore.setItemAsync(FONT_SCALE_KEY, k);
+    storage.setItemAsync(FONT_SCALE_KEY, k);
   };
 
   const colors = theme === "dark" ? darkColors : lightColors;

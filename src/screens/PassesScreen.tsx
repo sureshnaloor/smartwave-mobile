@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import {
   View,
   Text,
@@ -7,11 +7,12 @@ import {
   StyleSheet,
   ActivityIndicator,
   RefreshControl,
-  Alert,
 } from "react-native";
 import { useAuth } from "../context/AuthContext";
 import { useTheme } from "../context/ThemeContext";
 import { getPasses, Pass, PassesResponse } from "../api/client";
+
+export type PassTab = "corporate" | "upcoming" | "available" | "requested" | "expired" | "draft" | "my-passes";
 
 type Props = {
   navigation?: any;
@@ -24,7 +25,8 @@ export default function PassesScreen({ navigation }: Props) {
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState("");
   const [data, setData] = useState<PassesResponse | null>(null);
-  const [activeTab, setActiveTab] = useState<"corporate" | "public">("public");
+  const [activeTab, setActiveTab] = useState<PassTab>("upcoming");
+  const hasAutoSwitchedCorporate = useRef(false);
 
   const loadPasses = async () => {
     if (!token) {
@@ -51,6 +53,19 @@ export default function PassesScreen({ navigation }: Props) {
     loadPasses();
   }, [token]);
 
+  // Auto-switch to corporate tab for employees once on first load when they have corporate passes
+  useEffect(() => {
+    if (
+      data &&
+      !hasAutoSwitchedCorporate.current &&
+      data.isEmployee &&
+      (data.corporate?.length ?? 0) > 0
+    ) {
+      hasAutoSwitchedCorporate.current = true;
+      setActiveTab("corporate");
+    }
+  }, [data]);
+
   const onRefresh = () => {
     setRefreshing(true);
     loadPasses();
@@ -64,8 +79,8 @@ export default function PassesScreen({ navigation }: Props) {
 
   const getStatusColor = (status: string | null | undefined) => {
     if (!status) return colors.textMuted;
-    if (status === "approved") return "#10B981"; // green
-    if (status === "pending") return "#F59E0B"; // amber
+    if (status === "approved") return "#10B981";
+    if (status === "pending") return "#F59E0B";
     if (status === "rejected") return colors.error;
     return colors.textMuted;
   };
@@ -73,10 +88,56 @@ export default function PassesScreen({ navigation }: Props) {
   const getStatusText = (status: string | null | undefined) => {
     if (!status) return "Not requested";
     if (status === "approved") return "Approved";
-    if (status === "pending") return "Pending approval";
+    if (status === "pending") return "Pending";
     if (status === "rejected") return "Rejected";
     return "Unknown";
   };
+
+  // Same filtering logic as web app
+  const getFilteredPasses = (): Pass[] => {
+    if (!data) return [];
+    const now = new Date();
+    const publicPasses = data.passes || [];
+    const corporate = data.corporate || [];
+    const myPasses = data.myPasses || [];
+
+    switch (activeTab) {
+      case "corporate":
+        return corporate;
+      case "my-passes":
+        return myPasses;
+      case "upcoming":
+        return publicPasses.filter(
+          (p) =>
+            p.membershipStatus === "approved" &&
+            (!p.dateEnd || new Date(p.dateEnd) > now)
+        );
+      case "available":
+        return publicPasses.filter(
+          (p) =>
+            p.status === "active" &&
+            !p.membershipStatus &&
+            (!p.dateEnd || new Date(p.dateEnd) > now)
+        );
+      case "requested":
+        return publicPasses.filter((p) => p.membershipStatus === "pending");
+      case "expired":
+        return publicPasses.filter(
+          (p) =>
+            p.membershipStatus === "approved" &&
+            p.dateEnd &&
+            new Date(p.dateEnd) <= now
+        );
+      case "draft":
+        return publicPasses.filter((p) => p.status === "draft");
+      default:
+        return publicPasses;
+    }
+  };
+
+  const filteredPasses = getFilteredPasses();
+  const eventPasses = filteredPasses.filter((p) => p.type === "event");
+  const accessPasses = filteredPasses.filter((p) => p.type === "access");
 
   const renderPassCard = (pass: Pass) => {
     const statusColor = getStatusColor(pass.membershipStatus);
@@ -90,38 +151,86 @@ export default function PassesScreen({ navigation }: Props) {
         activeOpacity={0.7}
       >
         <View style={styles.passCardHeader}>
-          <Text style={[styles.passName, { color: colors.text }]}>{pass.name}</Text>
-          {pass.membershipStatus && (
-            <View style={[styles.statusBadge, { backgroundColor: statusColor + "20" }]}>
-              <Text style={[styles.statusText, { color: statusColor }]}>{statusText}</Text>
+          <Text style={[styles.passName, { color: colors.text }]} numberOfLines={2}>
+            {pass.name}
+          </Text>
+          <View style={styles.badgesRow}>
+            {pass.membershipStatus && (
+              <View style={[styles.statusBadge, { backgroundColor: statusColor + "20" }]}>
+                <Text style={[styles.statusText, { color: statusColor }]}>{statusText}</Text>
+              </View>
+            )}
+            {pass.status === "draft" && (
+              <View style={[styles.statusBadge, { backgroundColor: "#EF444420" }]}>
+                <Text style={[styles.statusText, { color: "#EF4444" }]}>Draft</Text>
+              </View>
+            )}
+            <View style={[styles.typeBadge, { borderColor: colors.primary }]}>
+              <Text style={[styles.typeBadgeText, { color: colors.primary }]}>
+                {pass.type === "event" ? "Event" : "Access"}
+              </Text>
             </View>
-          )}
+          </View>
         </View>
 
-        {pass.description && (
+        {pass.description ? (
           <Text style={[styles.passDescription, { color: colors.textMuted }]} numberOfLines={2}>
             {pass.description}
           </Text>
-        )}
+        ) : null}
 
         <View style={styles.passMeta}>
-          <Text style={[styles.passType, { color: colors.primary }]}>
-            {pass.type === "event" ? "Event" : "Access"}
-          </Text>
-          {pass.dateStart && (
+          {pass.dateStart ? (
             <Text style={[styles.passDate, { color: colors.textMuted }]}>
               {new Date(pass.dateStart).toLocaleDateString()}
             </Text>
+          ) : (
+            <Text style={[styles.passDate, { color: colors.textMuted }]}>—</Text>
           )}
         </View>
 
-        {pass.location?.name && (
+        {pass.location?.name ? (
           <Text style={[styles.passLocation, { color: colors.textMuted }]} numberOfLines={1}>
             📍 {pass.location.name}
           </Text>
-        )}
+        ) : null}
       </TouchableOpacity>
     );
+  };
+
+  const tabLabels: { key: PassTab; label: string; showWhen?: (d: PassesResponse) => boolean }[] = [
+    { key: "corporate", label: "Corporate", showWhen: (d) => !!d.isEmployee },
+    { key: "upcoming", label: "Upcoming" },
+    { key: "available", label: "Available" },
+    { key: "requested", label: "Requested" },
+    { key: "expired", label: "Expired" },
+    { key: "draft", label: "Draft" },
+    { key: "my-passes", label: "My Created", showWhen: (d) => !!d.isPublicAdmin },
+  ];
+
+  const visibleTabs = tabLabels.filter((t) => !t.showWhen || (data && t.showWhen(data)));
+
+  const getEmptyMessage = () => {
+    switch (activeTab) {
+      case "corporate":
+        return data?.isEmployee
+          ? "No corporate passes available yet."
+          : "Sign in as a corporate employee to see company passes.";
+      case "my-passes":
+        return "No passes created yet.";
+      case "upcoming":
+        return "No upcoming passes.";
+      case "available":
+        return "No available passes.";
+      case "requested":
+        return "No requested passes.";
+      case "expired":
+        return "No expired passes.";
+      case "draft":
+        return "No draft passes.";
+      default:
+        return "No passes found.";
+    }
   };
 
   if (loading) {
@@ -146,47 +255,34 @@ export default function PassesScreen({ navigation }: Props) {
     );
   }
 
-  const corporatePasses = data?.corporate || [];
-  const publicPasses = data?.passes || [];
-  const isEmployee = data?.isEmployee || false;
-
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
-      {/* Tabs: show for all users so retail (Google) users can view and opt for public passes */}
-      <View style={[styles.tabs, { borderBottomColor: colors.border }]}>
-        <TouchableOpacity
-          style={[
-            styles.tab,
-            activeTab === "corporate" && { borderBottomColor: colors.primary, borderBottomWidth: 2 },
-          ]}
-          onPress={() => setActiveTab("corporate")}
-        >
-          <Text
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        style={[styles.tabsScroll, { borderBottomColor: colors.border }]}
+        contentContainerStyle={styles.tabsContent}
+      >
+        {visibleTabs.map(({ key, label }) => (
+          <TouchableOpacity
+            key={key}
             style={[
-              styles.tabText,
-              { color: activeTab === "corporate" ? colors.primary : colors.textMuted },
+              styles.tab,
+              activeTab === key && { borderBottomColor: colors.primary, borderBottomWidth: 2 },
             ]}
+            onPress={() => setActiveTab(key)}
           >
-            Corporate ({corporatePasses.length})
-          </Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[
-            styles.tab,
-            activeTab === "public" && { borderBottomColor: colors.primary, borderBottomWidth: 2 },
-          ]}
-          onPress={() => setActiveTab("public")}
-        >
-          <Text
-            style={[
-              styles.tabText,
-              { color: activeTab === "public" ? colors.primary : colors.textMuted },
-            ]}
-          >
-            Public ({publicPasses.length})
-          </Text>
-        </TouchableOpacity>
-      </View>
+            <Text
+              style={[
+                styles.tabText,
+                { color: activeTab === key ? colors.primary : colors.textMuted },
+              ]}
+            >
+              {label}
+            </Text>
+          </TouchableOpacity>
+        ))}
+      </ScrollView>
 
       <ScrollView
         style={styles.scrollView}
@@ -195,39 +291,32 @@ export default function PassesScreen({ navigation }: Props) {
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />
         }
       >
-        {error && data && (
+        {error && data ? (
           <View style={[styles.errorBanner, { backgroundColor: colors.error + "20" }]}>
             <Text style={[styles.errorBannerText, { color: colors.error }]}>{error}</Text>
           </View>
-        )}
+        ) : null}
 
-        {activeTab === "corporate" && (
+        {filteredPasses.length === 0 ? (
+          <View style={styles.emptyState}>
+            <Text style={[styles.emptyText, { color: colors.textMuted }]}>{getEmptyMessage()}</Text>
+          </View>
+        ) : (
           <>
-            {corporatePasses.length === 0 ? (
-              <View style={styles.emptyState}>
-                <Text style={[styles.emptyText, { color: colors.textMuted }]}>
-                  {isEmployee
-                    ? "No corporate passes available yet."
-                    : "Sign in as a corporate employee to see company passes."}
+            {eventPasses.length > 0 ? (
+              <>
+                <Text style={[styles.sectionTitle, { color: colors.text }]}>Events</Text>
+                {eventPasses.map(renderPassCard)}
+              </>
+            ) : null}
+            {accessPasses.length > 0 ? (
+              <>
+                <Text style={[styles.sectionTitle, { color: colors.text, marginTop: 16 }]}>
+                  Access & Memberships
                 </Text>
-              </View>
-            ) : (
-              corporatePasses.map(renderPassCard)
-            )}
-          </>
-        )}
-
-        {activeTab === "public" && (
-          <>
-            {publicPasses.length === 0 ? (
-              <View style={styles.emptyState}>
-                <Text style={[styles.emptyText, { color: colors.textMuted }]}>
-                  No public passes available.
-                </Text>
-              </View>
-            ) : (
-              publicPasses.map(renderPassCard)
-            )}
+                {accessPasses.map(renderPassCard)}
+              </>
+            ) : null}
           </>
         )}
       </ScrollView>
@@ -245,18 +334,22 @@ const styles = StyleSheet.create({
     alignItems: "center",
     padding: 24,
   },
-  tabs: {
-    flexDirection: "row",
+  tabsScroll: {
+    maxHeight: 52,
     borderBottomWidth: 1,
-    borderBottomColor: "#E5E7EB",
+  },
+  tabsContent: {
+    paddingHorizontal: 8,
   },
   tab: {
-    flex: 1,
     paddingVertical: 12,
-    alignItems: "center",
+    paddingHorizontal: 14,
+    marginHorizontal: 4,
+    borderBottomWidth: 2,
+    borderBottomColor: "transparent",
   },
   tabText: {
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: "600",
   },
   scrollView: {
@@ -264,6 +357,7 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     padding: 16,
+    paddingBottom: 32,
   },
   errorBanner: {
     padding: 12,
@@ -272,6 +366,11 @@ const styles = StyleSheet.create({
   },
   errorBannerText: {
     fontSize: 14,
+  },
+  sectionTitle: {
+    fontSize: 18,
+    fontWeight: "700",
+    marginBottom: 12,
   },
   passCard: {
     padding: 16,
@@ -291,6 +390,12 @@ const styles = StyleSheet.create({
     flex: 1,
     marginRight: 8,
   },
+  badgesRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    alignItems: "center",
+    gap: 6,
+  },
   statusBadge: {
     paddingHorizontal: 8,
     paddingVertical: 4,
@@ -299,6 +404,17 @@ const styles = StyleSheet.create({
   statusText: {
     fontSize: 12,
     fontWeight: "600",
+  },
+  typeBadge: {
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 8,
+    borderWidth: 1,
+  },
+  typeBadgeText: {
+    fontSize: 11,
+    fontWeight: "600",
+    textTransform: "uppercase",
   },
   passDescription: {
     fontSize: 14,
@@ -310,11 +426,6 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     alignItems: "center",
     marginBottom: 8,
-  },
-  passType: {
-    fontSize: 12,
-    fontWeight: "600",
-    textTransform: "uppercase",
   },
   passDate: {
     fontSize: 12,

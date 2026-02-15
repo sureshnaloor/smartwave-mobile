@@ -212,6 +212,7 @@ export type Pass = {
     name?: string;
     lat?: number;
     lng?: number;
+    address?: string;
   };
   dateStart?: string;
   dateEnd?: string;
@@ -220,6 +221,8 @@ export type Pass = {
   updatedAt?: string;
   membershipStatus?: MembershipStatus;
   membershipId?: string | null;
+  /** Only present for passes returned in myPasses (public admin's created passes). */
+  pendingMembershipsCount?: number;
 };
 
 export type PassesResponse = {
@@ -227,6 +230,8 @@ export type PassesResponse = {
   corporate: Pass[];
   isEmployee: boolean;
   isPublicAdmin: boolean;
+  /** Passes created by the current user (public admin). Only set when isPublicAdmin is true. */
+  myPasses?: Pass[];
   filters: {
     category: string;
     location: { lat: number; lng: number; radius: number } | null;

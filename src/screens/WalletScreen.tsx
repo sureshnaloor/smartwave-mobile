@@ -13,11 +13,35 @@ export default function WalletScreen() {
   const [error, setError] = useState("");
 
   useEffect(() => {
-    if (!token) return;
+    if (!token) {
+      setLoading(false);
+      setShorturl(null);
+      return;
+    }
+    
+    let cancelled = false;
+    setLoading(true);
+    
     getProfile(token)
-      .then((p) => setShorturl(p.shorturl ?? null))
-      .catch((e) => setError(e instanceof Error ? e.message : "Failed to load profile"))
-      .finally(() => setLoading(false));
+      .then((p) => {
+        if (!cancelled) {
+          setShorturl(p.shorturl ?? null);
+        }
+      })
+      .catch((e) => {
+        if (!cancelled) {
+          setError(e instanceof Error ? e.message : "Failed to load profile");
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setLoading(false);
+        }
+      });
+    
+    return () => {
+      cancelled = true;
+    };
   }, [token]);
 
   const openUrl = (url: string) => {

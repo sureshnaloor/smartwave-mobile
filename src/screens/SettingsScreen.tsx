@@ -6,6 +6,22 @@ import { useAuth } from "../context/AuthContext";
 export default function SettingsScreen() {
   const { theme, setTheme, fontScaleKey, setFontScaleKey, colors } = useTheme();
   const { signOut } = useAuth();
+  const [isSigningOut, setIsSigningOut] = React.useState(false);
+
+  const handleSignOut = async () => {
+    if (isSigningOut) return;
+    try {
+      setIsSigningOut(true);
+      await signOut();
+      // Navigation will automatically switch to sign-in screen via AppNavigator
+    } catch (e) {
+      console.error("[SettingsScreen] Error signing out:", e);
+      // Still try to sign out even if there's an error
+      await signOut().catch(() => {});
+    } finally {
+      setIsSigningOut(false);
+    }
+  };
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
@@ -51,10 +67,13 @@ export default function SettingsScreen() {
       <View style={[styles.section, { backgroundColor: colors.card, borderColor: colors.border }]}>
         <Text style={[styles.sectionTitle, { color: colors.textMuted }]}>Account</Text>
         <TouchableOpacity
-          style={[styles.logoutButton, { borderColor: colors.error }]}
-          onPress={() => signOut()}
+          style={[styles.logoutButton, { borderColor: colors.error }, isSigningOut && styles.logoutButtonDisabled]}
+          onPress={handleSignOut}
+          disabled={isSigningOut}
         >
-          <Text style={[styles.logoutButtonText, { color: colors.error }]}>Log out</Text>
+          <Text style={[styles.logoutButtonText, { color: colors.error }]}>
+            {isSigningOut ? "Signing out..." : "Log out"}
+          </Text>
         </TouchableOpacity>
         <Text style={[styles.logoutHint, { color: colors.textMuted }]}>
           Sign out to switch to another account.
@@ -98,6 +117,9 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     padding: 14,
     alignItems: "center",
+  },
+  logoutButtonDisabled: {
+    opacity: 0.5,
   },
   logoutButtonText: { fontSize: 16, fontWeight: "600" },
   logoutHint: { fontSize: 12, marginTop: 8 },
