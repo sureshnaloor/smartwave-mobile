@@ -9,6 +9,10 @@ export const API_BASE =
 export const GOOGLE_WEB_CLIENT_ID =
   process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID ?? "";
 
+/** Public digital profile page (same as web `/publicprofile/[shorturl]`). */
+export const getPublicProfileUrl = (shorturl: string) =>
+  `${API_BASE.replace(/\/$/, "")}/publicprofile/${encodeURIComponent(shorturl)}`;
+
 export const getWalletAppleUrl = (shorturl: string) =>
   `${API_BASE}/api/wallet/apple?shorturl=${encodeURIComponent(shorturl)}`;
 

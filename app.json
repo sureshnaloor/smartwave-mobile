@@ -4,20 +4,21 @@
     "slug": "smartwave-mobile",
     "owner": "sureshnaloor",
     "scheme": "smartwave",
-    "version": "1.0.2",
+    "version": "1.0.3",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
     "newArchEnabled": true,
     "splash": {
-      "image": "./assets/splash-icon.png",
+      "image": "./assets/splash.png",
       "resizeMode": "contain",
-      "backgroundColor": "#ffffff"
+      "backgroundColor": "#001040"
     },
     "ios": {
       "bundleIdentifier": "com.smartwave.mobile",
       "supportsTablet": true,
       "usesAppleSignIn": true,
+      "buildNumber": "2",
       "infoPlist": {
         "NSAppTransportSecurity": {
           "NSAllowsArbitraryLoads": true,
@@ -28,10 +29,10 @@
     },
     "android": {
       "package": "com.smartwave.mobile",
-      "versionCode": 3,
+      "versionCode": 5,
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#ffffff"
+        "backgroundColor": "#001040"
       },
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false

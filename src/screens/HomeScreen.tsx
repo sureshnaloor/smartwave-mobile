@@ -12,6 +12,7 @@ import { useAuth } from "../context/AuthContext";
 import { useProfilePermissions, ADMIN_CREATED_MESSAGE } from "../context/ProfilePermissionsContext";
 import { getProfile, type Profile } from "../api/client";
 import { useTheme } from "../context/ThemeContext";
+import { buildPublicProfileUrl, copyPublicProfileLink, openPublicProfile } from "../utils/public-profile";
 
 type Props = {
   onEdit: () => void;
@@ -128,6 +129,7 @@ export default function HomeScreen({ onEdit, navigation }: Props) {
 
   const name = [profile?.firstName, profile?.lastName].filter(Boolean).join(" ") || profile?.name || profile?.userEmail || "—";
   const isAdminCreated = Boolean(profile?.createdByAdminId);
+  const publicProfileUrl = buildPublicProfileUrl(profile?.shorturl);
 
   return (
     <ScrollView
@@ -174,38 +176,60 @@ export default function HomeScreen({ onEdit, navigation }: Props) {
         <Row label="Website" value={profile?.website} colors={colors} />
       </View>
 
+      <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
+        <Text style={[styles.sectionTitle, { color: colors.text }]}>Digital Profile (Web)</Text>
+        <Text style={[styles.sectionDescription, { color: colors.textMuted }]}>
+          Open your public SmartWave profile page — the same view visitors see when they scan your QR code or open your link.
+        </Text>
+        {publicProfileUrl ? (
+          <>
+            <TouchableOpacity
+              style={[styles.profileWebButton, { backgroundColor: colors.primary }]}
+              onPress={() => openPublicProfile(profile?.shorturl)}
+              activeOpacity={0.8}
+            >
+              <Text style={styles.profileWebButtonText}>View Digital Profile</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.copyLinkButton, { borderColor: colors.border }]}
+              onPress={() => copyPublicProfileLink(profile?.shorturl)}
+              activeOpacity={0.8}
+            >
+              <Text style={[styles.copyLinkButtonText, { color: colors.text }]}>Copy profile link</Text>
+            </TouchableOpacity>
+            <Text style={[styles.profileLink, { color: colors.primary }]} selectable>
+              {publicProfileUrl}
+            </Text>
+          </>
+        ) : (
+          <Text style={[styles.sectionDescription, { color: colors.textMuted, marginTop: 4 }]}>
+            Your shareable link is being set up. Save your profile or try again shortly.
+          </Text>
+        )}
+      </View>
+
       <View style={styles.actionButtons}>
         <TouchableOpacity
           style={[styles.actionButton, { backgroundColor: colors.primary }]}
           onPress={() => {
-            if (__DEV__) {
-              console.log("[HomeScreen] Navigating to DigitalCard, navigation:", !!navigation);
-            }
             if (navigation) {
               navigation.navigate("DigitalCard");
-            } else {
-              console.error("[HomeScreen] Navigation not available!");
             }
           }}
           activeOpacity={0.8}
         >
-          <Text style={styles.actionButtonText}>View Digital Card</Text>
+          <Text style={styles.actionButtonText}>Digital Card</Text>
         </TouchableOpacity>
         <TouchableOpacity
           style={[styles.actionButton, styles.secondaryButton, { borderColor: colors.border }]}
           onPress={() => {
-            if (__DEV__) {
-              console.log("[HomeScreen] Navigating to QRCode, navigation:", !!navigation);
-            }
             if (navigation) {
               navigation.navigate("QRCode");
-            } else {
-              console.error("[HomeScreen] Navigation not available!");
             }
           }}
           activeOpacity={0.8}
         >
-          <Text style={[styles.actionButtonTextSecondary, { color: colors.text }]}>View QR Code</Text>
+          <Text style={[styles.actionButtonTextSecondary, { color: colors.text }]}>QR Code</Text>
         </TouchableOpacity>
       </View>
 
@@ -276,6 +300,24 @@ const styles = StyleSheet.create({
   value: { fontSize: 15 },
   errorText: { textAlign: "center", padding: 24, fontSize: 16 },
   errorHint: { textAlign: "center", paddingHorizontal: 24, fontSize: 14 },
+  sectionTitle: { fontSize: 18, fontWeight: "600", marginBottom: 8 },
+  sectionDescription: { fontSize: 14, lineHeight: 20, marginBottom: 12 },
+  profileWebButton: {
+    borderRadius: 12,
+    paddingVertical: 14,
+    alignItems: "center",
+    marginBottom: 10,
+  },
+  profileWebButtonText: { color: "#fff", fontSize: 15, fontWeight: "600" },
+  copyLinkButton: {
+    borderRadius: 12,
+    borderWidth: 1,
+    paddingVertical: 12,
+    alignItems: "center",
+    marginBottom: 8,
+  },
+  copyLinkButtonText: { fontSize: 14, fontWeight: "600" },
+  profileLink: { fontSize: 12, lineHeight: 18 },
   actionButtons: {
     flexDirection: "row",
     gap: 12,

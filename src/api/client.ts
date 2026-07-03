@@ -78,6 +78,17 @@ export type Profile = {
   workCountry?: string;
   website?: string;
   linkedin?: string;
+  twitter?: string;
+  facebook?: string;
+  instagram?: string;
+  youtube?: string;
+  homeStreet?: string;
+  homeCity?: string;
+  homeState?: string;
+  homeZipcode?: string;
+  homeCountry?: string;
+  homePhone?: string;
+  homePhone?: string;
   /** When set, profile was created by an admin; user cannot edit, only view/share. */
   createdByAdminId?: string;
   [key: string]: unknown;

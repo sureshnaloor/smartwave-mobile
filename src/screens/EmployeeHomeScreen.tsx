@@ -3,7 +3,8 @@ import { View, Text, StyleSheet, ActivityIndicator, TouchableOpacity, Linking, A
 import { useAuth } from "../context/AuthContext";
 import { useTheme } from "../context/ThemeContext";
 import { getProfile, type Profile } from "../api/client";
-import { API_BASE, getWalletAppleUrl, getWalletGoogleUrl } from "../config";
+import { getWalletAppleUrl, getWalletGoogleUrl } from "../config";
+import { buildPublicProfileUrl, copyPublicProfileLink, openPublicProfile } from "../utils/public-profile";
 
 type Props = {
   navigation?: any;
@@ -80,7 +81,7 @@ export default function EmployeeHomeScreen({ navigation }: Props) {
 
   const isAdminCreated = Boolean(profile.createdByAdminId);
   const shorturl = profile.shorturl ?? null;
-  const publicUrl = shorturl ? `${API_BASE.replace(/\/$/, "")}/publicprofile/${shorturl}` : null;
+  const publicUrl = buildPublicProfileUrl(shorturl);
   const appleUrl = shorturl ? getWalletAppleUrl(shorturl) : null;
   const googleUrl = shorturl ? getWalletGoogleUrl(shorturl) : null;
 
@@ -114,8 +115,17 @@ export default function EmployeeHomeScreen({ navigation }: Props) {
 
         {publicUrl ? (
           <>
-            <TouchableOpacity style={[styles.button, styles.primaryButton]} onPress={() => openUrl(publicUrl)}>
-              <Text style={styles.buttonText}>Open my profile</Text>
+            <TouchableOpacity
+              style={[styles.button, styles.primaryButton]}
+              onPress={() => openPublicProfile(shorturl)}
+            >
+              <Text style={styles.buttonText}>View Digital Profile</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.button, styles.copyButton, { borderColor: colors.border }]}
+              onPress={() => copyPublicProfileLink(shorturl)}
+            >
+              <Text style={[styles.copyButtonText, { color: colors.text }]}>Copy profile link</Text>
             </TouchableOpacity>
             <Text style={[styles.linkText, { color: colors.primary }]} selectable>
               {publicUrl}
@@ -260,6 +270,11 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
   primaryButton: { backgroundColor: "#3b82f6" },
+  copyButton: {
+    backgroundColor: "transparent",
+    borderWidth: 1,
+  },
+  copyButtonText: { fontSize: 15, fontWeight: "600" },
   appleButton: { backgroundColor: "#000" },
   googleButton: { backgroundColor: "#4285F4" },
   buttonText: { color: "#fff", fontSize: 15, fontWeight: "600" },
